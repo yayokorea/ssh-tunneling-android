@@ -216,6 +216,9 @@ fun SshTunnelingApp(
         ProjectInfoDialog(
             onDismiss = { showProjectInfo = false },
             onOpenGithub = { uriHandler.openUri(context.getString(R.string.github_repository_url)) },
+            uiState = uiState,
+            onCheckUpdate = viewModel::checkForUpdate,
+            onDownloadUpdate = viewModel::downloadAndInstall,
         )
     }
 
@@ -814,6 +817,9 @@ private fun statusLabel(status: ForwardStatus?): String {
 private fun ProjectInfoDialog(
     onDismiss: () -> Unit,
     onOpenGithub: () -> Unit,
+    uiState: TunnelUiState,
+    onCheckUpdate: () -> Unit,
+    onDownloadUpdate: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -842,6 +848,59 @@ private fun ProjectInfoDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                
+                Text(
+                    "현재 버전: ${uiState.currentVersion} (${uiState.currentVersionCode})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                if (uiState.isCheckingUpdate) {
+                    Text(
+                        "업데이트 확인 중...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else if (uiState.updateInfo != null) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        ),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "새 버전 사용 가능: ${uiState.updateInfo.versionName}",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                uiState.updateInfo.releaseNote.take(200),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 3,
+                            )
+                            Button(
+                                onClick = onDownloadUpdate,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Rounded.Download, contentDescription = null)
+                                Spacer(Modifier.size(8.dp))
+                                Text("다운로드 및 설치")
+                            }
+                        }
+                    }
+                } else {
+                    TextButton(
+                        onClick = onCheckUpdate,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.Download, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text("업데이트 확인")
+                    }
+                }
+
                 FilledTonalButton(
                     onClick = onOpenGithub,
                     modifier = Modifier.fillMaxWidth(),

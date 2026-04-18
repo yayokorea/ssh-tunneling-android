@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.yayo.sshtunneling.data.TunnelPreferences
+import com.yayo.sshtunneling.data.UpdateChecker
+import com.yayo.sshtunneling.data.UpdateInfo
 import com.yayo.sshtunneling.model.AuthMode
 import com.yayo.sshtunneling.model.ForwardStatus
 import com.yayo.sshtunneling.model.HostProfile
@@ -19,34 +21,51 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class TunnelUiState(
     val appData: TunnelAppData = TunnelAppData(),
     val statuses: Map<String, ForwardStatus> = emptyMap(),
     val selectedHostId: String? = null,
     val selectedForwardId: String? = null,
+    val updateInfo: UpdateInfo? = null,
+    val isCheckingUpdate: Boolean = false,
+    val currentVersion: String = "1.0",
+    val currentVersionCode: Long = 1,
 )
 
 private data class TunnelEditorState(
     val appData: TunnelAppData,
     val selectedHostId: String?,
     val selectedForwardId: String?,
+    val updateInfo: UpdateInfo? = null,
+    val isCheckingUpdate: Boolean = false,
 )
 
 class TunnelViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = TunnelPreferences(application)
+    private val updateChecker = UpdateChecker(application)
     private val editorState = MutableStateFlow(loadInitialState())
 
     val uiState: StateFlow<TunnelUiState>
 
     init {
         TunnelRuntime.initialize(application)
+        val (currentVersion, currentVersionCode) = updateChecker.getCurrentVersion()
+        editorState.value = editorState.value.copy(
+            currentVersion = currentVersion,
+            currentVersionCode = currentVersionCode
+        )
         uiState = combine(editorState, TunnelRuntime.statuses) { editor, statuses ->
             TunnelUiState(
                 appData = editor.appData,
                 statuses = statuses,
                 selectedHostId = editor.selectedHostId,
                 selectedForwardId = editor.selectedForwardId,
+                updateInfo = editor.updateInfo,
+                isCheckingUpdate = editor.isCheckingUpdate,
+                currentVersion = editorState.value.currentVersion,
+                currentVersionCode = editorState.value.currentVersionCode,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -296,5 +315,31 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
             hostId = hostId,
             name = "Port $index",
         )
+    }
+
+    fun checkForUpdate() {
+        editorState.value = editorState.value.copy(isCheckingUpdate = true)
+        viewModelScope.launch {
+            val updateInfo = updateChecker.checkForUpdate()
+            val currentVersion = editorState.value.currentVersion
+            val currentVersionCode = editorState.value.currentVersionCode
+            
+            val hasUpdate = updateInfo != null && (
+                updateInfo.versionCode > currentVersionCode ||
+                updateInfo.versionName != currentVersion
+            )
+            
+            editorState.value = editorState.value.copy(
+                updateInfo = if (hasUpdate) updateInfo else null,
+                isCheckingUpdate = false,
+            )
+        }
+    }
+
+    fun downloadAndInstall() {
+        val updateInfo = editorState.value.updateInfo ?: return
+        viewModelScope.launch {
+            updateChecker.downloadAndInstall(updateInfo.downloadUrl)
+        }
     }
 }
