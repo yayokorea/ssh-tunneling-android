@@ -24,11 +24,11 @@ class SshTunnelManager(
         }
 
         val createdSession = jsch.getSession(host.username, host.host, host.port).apply {
-            if (host.authMode == AuthMode.PASSWORD) {
-                setPassword(host.password)
+            if (this@SshTunnelManager.host.authMode == AuthMode.PASSWORD) {
+                setPassword(this@SshTunnelManager.host.password)
             }
             setConfig("StrictHostKeyChecking", "no")
-            serverAliveInterval = host.keepAliveSeconds * 1000
+            serverAliveInterval = this@SshTunnelManager.host.keepAliveSeconds * 1000
             timeout = 15_000
             connect(15_000)
         }
