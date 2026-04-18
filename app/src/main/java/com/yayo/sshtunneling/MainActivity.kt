@@ -5,12 +5,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import com.yayo.sshtunneling.ui.SshTunnelingApp
 import com.yayo.sshtunneling.ui.TunnelViewModel
 import com.yayo.sshtunneling.ui.theme.SshTunnelingTheme
 
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 class MainActivity : ComponentActivity() {
     private val viewModel: TunnelViewModel by viewModels()
 

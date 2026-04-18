@@ -52,6 +52,7 @@ import com.yayo.sshtunneling.model.AuthMode
 import com.yayo.sshtunneling.model.TunnelConnectionState
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun SshTunnelingApp(
     viewModel: TunnelViewModel,
     isExpanded: Boolean,
@@ -60,8 +61,9 @@ fun SshTunnelingApp(
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.status.state, uiState.status.message) {
-        if (uiState.status.state == TunnelConnectionState.ERROR && !uiState.status.message.isNullOrBlank()) {
-            snackbarHostState.showSnackbar(uiState.status.message)
+        val errorMessage = uiState.status.message
+        if (uiState.status.state == TunnelConnectionState.ERROR && !errorMessage.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(errorMessage)
         }
     }
 
