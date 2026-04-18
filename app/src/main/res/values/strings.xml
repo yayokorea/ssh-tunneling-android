@@ -13,6 +13,7 @@
     <string name="widget_button_disconnect">Disconnect</string>
     <string name="widget_button_connecting">Connecting…</string>
     <string name="widget_button_retry">Retry</string>
+    <string name="widget_description">One-tap SSH tunnel toggle</string>
     <string name="widget_status_idle">Idle</string>
     <string name="widget_status_connecting">Connecting</string>
     <string name="widget_status_connected">Connected</string>

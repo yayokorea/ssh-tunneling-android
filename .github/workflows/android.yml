@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
@@ -19,7 +21,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -31,4 +35,4 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Assemble debug APK
-        run: ./gradlew --stacktrace :app:assembleDebug
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
