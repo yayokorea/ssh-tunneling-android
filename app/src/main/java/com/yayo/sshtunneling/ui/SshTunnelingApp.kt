@@ -789,7 +789,11 @@ private fun TunnelNumberField(
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = onValueChange,
+        onValueChange = { input ->
+            val numericOnly = input.filter { it.isDigit() }
+            val newValue = if (numericOnly.isEmpty()) "0" else numericOnly
+            onValueChange(newValue)
+        },
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
         singleLine = true,
