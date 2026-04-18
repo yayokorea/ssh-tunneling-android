@@ -47,7 +47,9 @@ jobs:
       - name: Compute version code
         run: |
           VERSION_CODE=$(git rev-list --count HEAD)
+          APK_FILE_NAME="ssh-tunneling-${RELEASE_TAG}.apk"
           echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "APK_FILE_NAME=$APK_FILE_NAME" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -82,18 +84,42 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
 
+      - name: Prepare release assets
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p release-assets
+          cp app/build/outputs/apk/release/app-release.apk "release-assets/${APK_FILE_NAME}"
+          APK_SHA256=$(sha256sum "release-assets/${APK_FILE_NAME}" | cut -d ' ' -f 1)
+          RELEASED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          cat > release-assets/manifest.json <<EOF
+          {
+            "versionName": "${VERSION_NAME}",
+            "versionCode": ${VERSION_CODE},
+            "tag": "${RELEASE_TAG}",
+            "apkUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${APK_FILE_NAME}",
+            "sha256": "${APK_SHA256}",
+            "releaseNotesUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}",
+            "releasedAt": "${RELEASED_AT}"
+          }
+          EOF
+
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ssh-tunneling-release-apk-${{ env.RELEASE_TAG }}
-          path: app/build/outputs/apk/release/app-release.apk
+          path: |
+            release-assets/${{ env.APK_FILE_NAME }}
+            release-assets/manifest.json
           if-no-files-found: error
 
       - name: Create or update GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: app/build/outputs/apk/release/app-release.apk
+          files: |
+            release-assets/${{ env.APK_FILE_NAME }}
+            release-assets/manifest.json
           generate_release_notes: true
           body: |
             - Version name: ${{ env.VERSION_NAME }}

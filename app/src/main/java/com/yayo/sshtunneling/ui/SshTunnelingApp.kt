@@ -46,6 +46,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -82,6 +83,7 @@ import com.yayo.sshtunneling.model.HostProfile
 import com.yayo.sshtunneling.model.PortForwardRule
 import com.yayo.sshtunneling.model.TunnelConnectionState
 import com.yayo.sshtunneling.model.WidgetSlots
+import com.yayo.sshtunneling.update.AppUpdateInfo
 import kotlinx.coroutines.launch
 
 @Composable
@@ -89,6 +91,7 @@ import kotlinx.coroutines.launch
 fun SshTunnelingApp(
     viewModel: TunnelViewModel,
     isExpanded: Boolean,
+    onInstallUpdate: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -232,6 +235,25 @@ fun SshTunnelingApp(
                         scope.launch { snackbarHostState.showSnackbar(error.message ?: context.getString(R.string.import_invalid_file)) }
                     }
             },
+        )
+    }
+
+    uiState.updateState.availableUpdate?.let { updateInfo ->
+        AppUpdateDialog(
+            updateInfo = updateInfo,
+            isDownloading = uiState.updateState.isDownloading,
+            onDismiss = viewModel::dismissAvailableUpdate,
+            onInstall = onInstallUpdate,
+            onOpenReleaseNotes = {
+                updateInfo.releaseNotesUrl?.let(uriHandler::openUri)
+            },
+        )
+    }
+
+    uiState.updateState.errorMessage?.let { message ->
+        UpdateErrorDialog(
+            message = message,
+            onDismiss = viewModel::clearUpdateError,
         )
     }
 }
@@ -879,8 +901,79 @@ private fun ImportConfirmDialog(
     )
 }
 
+@Composable
+private fun AppUpdateDialog(
+    updateInfo: AppUpdateInfo,
+    isDownloading: Boolean,
+    onDismiss: () -> Unit,
+    onInstall: () -> Unit,
+    onOpenReleaseNotes: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = {
+            if (!isDownloading) onDismiss()
+        },
+        confirmButton = {
+            TextButton(onClick = onInstall, enabled = !isDownloading) {
+                Text(stringResourceCompat(R.string.update_install))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                updateInfo.releaseNotesUrl?.let {
+                    TextButton(onClick = onOpenReleaseNotes, enabled = !isDownloading) {
+                        Text(stringResourceCompat(R.string.update_release_notes))
+                    }
+                }
+                TextButton(onClick = onDismiss, enabled = !isDownloading) {
+                    Text(stringResourceCompat(R.string.update_later))
+                }
+            }
+        },
+        title = { Text(stringResourceCompat(R.string.update_available_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResourceCompat(R.string.update_available_message, updateInfo.versionName))
+                updateInfo.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                    Text(notes, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (isDownloading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Text(
+                        text = stringResourceCompat(R.string.update_downloading),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun UpdateErrorDialog(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("확인")
+            }
+        },
+        title = { Text(stringResourceCompat(R.string.update_error_title)) },
+        text = { Text(message) },
+    )
+}
+
 private fun String.previewLabel(): String {
     if (isBlank()) return "키가 비어 있습니다."
     val firstLine = lineSequence().firstOrNull()?.trim().orEmpty()
     return if (length > 48) "$firstLine ... (${length} chars)" else firstLine
+}
+
+@Composable
+private fun stringResourceCompat(id: Int, vararg args: Any): String {
+    return LocalContext.current.getString(id, *args)
 }
