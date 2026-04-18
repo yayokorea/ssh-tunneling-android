@@ -25,7 +25,10 @@ class GitHubReleaseUpdater(private val context: Context) {
         updateInfo.takeIf { it.versionCode > currentVersionCode }
     }
 
-    suspend fun downloadAndLaunchInstaller(updateInfo: AppUpdateInfo) = withContext(Dispatchers.IO) {
+    suspend fun downloadAndLaunchInstaller(
+        updateInfo: AppUpdateInfo,
+        onDownloadProgress: (Int?) -> Unit,
+    ) = withContext(Dispatchers.IO) {
         val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
         updatesDir.listFiles().orEmpty().forEach { existing ->
             if (existing.name != "update-${updateInfo.versionCode}.apk") {
@@ -35,11 +38,27 @@ class GitHubReleaseUpdater(private val context: Context) {
 
         val apkFile = File(updatesDir, "update-${updateInfo.versionCode}.apk")
         val digest = MessageDigest.getInstance("SHA-256")
+        onDownloadProgress(0)
 
         request(updateInfo.apkUrl) { connection ->
+            val contentLength = connection.contentLengthLong.takeIf { it > 0L }
             apkFile.outputStream().buffered().use { output ->
                 DigestInputStream(connection.inputStream.buffered(), digest).use { input ->
-                    input.copyTo(output)
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var downloaded = 0L
+                    var read = input.read(buffer)
+
+                    while (read >= 0) {
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (contentLength != null) {
+                            val progress = ((downloaded * 100) / contentLength)
+                                .toInt()
+                                .coerceIn(0, 100)
+                            onDownloadProgress(progress)
+                        }
+                        read = input.read(buffer)
+                    }
                 }
             }
         }
@@ -50,6 +69,7 @@ class GitHubReleaseUpdater(private val context: Context) {
             error(context.getString(R.string.update_error_hash_mismatch))
         }
 
+        onDownloadProgress(100)
         launchInstaller(apkFile)
     }
 

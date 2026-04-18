@@ -1,6 +1,7 @@
 package com.yayo.sshtunneling.ui
 
 import android.app.Application
+import com.yayo.sshtunneling.R
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.yayo.sshtunneling.data.TunnelPreferences
@@ -69,17 +70,30 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    fun checkForAppUpdate() {
-        if (hasCheckedForUpdate) return
+    fun checkForAppUpdate(force: Boolean = false) {
+        if (hasCheckedForUpdate && !force) return
         hasCheckedForUpdate = true
-        updateState.value = updateState.value.copy(isChecking = true)
+        updateState.value = updateState.value.copy(isChecking = true, errorMessage = null, statusMessage = null)
 
         viewModelScope.launch {
-            val availableUpdate = runCatching { updater.fetchAvailableUpdate() }.getOrNull()
-            updateState.value = updateState.value.copy(
-                availableUpdate = availableUpdate,
-                isChecking = false,
-            )
+            runCatching { updater.fetchAvailableUpdate() }
+                .onSuccess { availableUpdate ->
+                    updateState.value = updateState.value.copy(
+                        availableUpdate = availableUpdate,
+                        isChecking = false,
+                        statusMessage = if (force && availableUpdate == null) {
+                            getApplication<Application>().getString(R.string.update_latest)
+                        } else {
+                            null
+                        },
+                    )
+                }
+                .onFailure { error ->
+                    updateState.value = updateState.value.copy(
+                        isChecking = false,
+                        errorMessage = error.message,
+                    )
+                }
         }
     }
 
@@ -91,22 +105,35 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         updateState.value = updateState.value.copy(errorMessage = null)
     }
 
+    fun clearUpdateStatusMessage() {
+        updateState.value = updateState.value.copy(statusMessage = null)
+    }
+
     fun downloadAndInstallUpdate() {
         val availableUpdate = updateState.value.availableUpdate ?: return
         if (updateState.value.isDownloading) return
 
-        updateState.value = updateState.value.copy(isDownloading = true, errorMessage = null)
+        updateState.value = updateState.value.copy(
+            isDownloading = true,
+            downloadProgressPercent = 0,
+            errorMessage = null,
+            statusMessage = null,
+        )
         viewModelScope.launch {
             runCatching {
-                updater.downloadAndLaunchInstaller(availableUpdate)
+                updater.downloadAndLaunchInstaller(availableUpdate) { progress ->
+                    updateState.value = updateState.value.copy(downloadProgressPercent = progress)
+                }
             }.onSuccess {
                 updateState.value = updateState.value.copy(
                     availableUpdate = null,
                     isDownloading = false,
+                    downloadProgressPercent = null,
                 )
             }.onFailure { error ->
                 updateState.value = updateState.value.copy(
                     isDownloading = false,
+                    downloadProgressPercent = null,
                     errorMessage = error.message,
                 )
             }

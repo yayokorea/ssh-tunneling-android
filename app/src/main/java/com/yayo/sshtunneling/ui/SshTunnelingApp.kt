@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Widgets
@@ -58,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -99,7 +101,7 @@ fun SshTunnelingApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
-    var showProjectInfo by rememberSaveable { mutableStateOf(false) }
+    var showAppInfo by rememberSaveable { mutableStateOf(false) }
     var pendingImportJson by remember { mutableStateOf<String?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -158,11 +160,19 @@ fun SshTunnelingApp(
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("프로젝트 정보") },
+                                text = { Text("업데이트 확인") },
+                                leadingIcon = { Icon(Icons.Rounded.Refresh, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.checkForAppUpdate(force = true)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("앱 정보") },
                                 leadingIcon = { Icon(Icons.Rounded.Info, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
-                                    showProjectInfo = true
+                                    showAppInfo = true
                                 },
                             )
                             DropdownMenuItem(
@@ -215,11 +225,18 @@ fun SshTunnelingApp(
         }
     }
 
-    if (showProjectInfo) {
-        ProjectInfoDialog(
-            onDismiss = { showProjectInfo = false },
+    if (showAppInfo) {
+        AppInfoDialog(
+            onDismiss = { showAppInfo = false },
             onOpenGithub = { uriHandler.openUri(context.getString(R.string.github_repository_url)) },
         )
+    }
+
+    uiState.updateState.statusMessage?.let { message ->
+        LaunchedEffect(message) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearUpdateStatusMessage()
+        }
     }
 
     pendingImportJson?.let { rawJson ->
@@ -242,6 +259,7 @@ fun SshTunnelingApp(
         AppUpdateDialog(
             updateInfo = updateInfo,
             isDownloading = uiState.updateState.isDownloading,
+            downloadProgressPercent = uiState.updateState.downloadProgressPercent,
             onDismiss = viewModel::dismissAvailableUpdate,
             onInstall = onInstallUpdate,
             onOpenReleaseNotes = {
@@ -833,10 +851,14 @@ private fun statusLabel(status: ForwardStatus?): String {
 }
 
 @Composable
-private fun ProjectInfoDialog(
+private fun AppInfoDialog(
     onDismiss: () -> Unit,
     onOpenGithub: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+    val versionName = packageInfo.versionName ?: "unknown"
+    val versionCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(packageInfo)
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -844,7 +866,7 @@ private fun ProjectInfoDialog(
                 Text("닫기")
             }
         },
-        title = { Text("프로젝트 정보") },
+        title = { Text("앱 정보") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Image(
@@ -872,6 +894,11 @@ private fun ProjectInfoDialog(
                     Spacer(Modifier.size(8.dp))
                     Text("GitHub Repository")
                 }
+                Text(
+                    text = context.getString(R.string.app_version_format, versionName, versionCode),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
     )
@@ -905,6 +932,7 @@ private fun ImportConfirmDialog(
 private fun AppUpdateDialog(
     updateInfo: AppUpdateInfo,
     isDownloading: Boolean,
+    downloadProgressPercent: Int?,
     onDismiss: () -> Unit,
     onInstall: () -> Unit,
     onOpenReleaseNotes: () -> Unit,
@@ -938,9 +966,21 @@ private fun AppUpdateDialog(
                     Text(notes, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (isDownloading) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    val progress = downloadProgressPercent?.coerceIn(0, 100)
+                    if (progress != null) {
+                        LinearProgressIndicator(
+                            progress = progress / 100f,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
                     Text(
-                        text = stringResourceCompat(R.string.update_downloading),
+                        text = if (progress != null) {
+                            stringResourceCompat(R.string.update_downloading_progress, progress)
+                        } else {
+                            stringResourceCompat(R.string.update_downloading)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
