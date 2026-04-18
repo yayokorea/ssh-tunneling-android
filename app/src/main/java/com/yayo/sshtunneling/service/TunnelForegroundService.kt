@@ -230,7 +230,7 @@ class TunnelForegroundService : Service() {
         const val ACTION_DISCONNECT_ALL = "com.yayo.sshtunneling.action.DISCONNECT_ALL"
         const val EXTRA_FORWARD_ID = "extra_forward_id"
 
-        fun start(context: Context, action: String, forwardId: String? = null) {
+        fun start(context: Context, action: String, forwardId: String? = null): Result<Unit> = runCatching {
             val intent = Intent(context, TunnelForegroundService::class.java).setAction(action)
             if (forwardId != null) {
                 intent.putExtra(EXTRA_FORWARD_ID, forwardId)

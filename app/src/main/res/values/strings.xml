@@ -5,6 +5,7 @@
     <string name="disconnect">Disconnect</string>
     <string name="disconnect_all">Disconnect all</string>
     <string name="status_profile_incomplete">Save a complete host and forward before starting the tunnel.</string>
+    <string name="status_service_start_failed">Could not start tunnel service.</string>
     <string name="status_unknown_error">Unknown SSH tunnel error</string>
     <string name="widget_description">One-tap SSH tunnel toggle</string>
     <string name="status_connecting_item">Starting %1$s</string>

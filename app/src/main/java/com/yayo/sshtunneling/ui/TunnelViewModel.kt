@@ -192,6 +192,16 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleForward(forwardId: String) {
         TunnelForegroundService.start(getApplication(), TunnelForegroundService.ACTION_TOGGLE, forwardId)
+            .onFailure { error ->
+                TunnelRuntime.upsert(
+                    getApplication(),
+                    ForwardStatus(
+                        forwardId = forwardId,
+                        state = com.yayo.sshtunneling.model.TunnelConnectionState.ERROR,
+                        message = error.message ?: getApplication<Application>().getString(com.yayo.sshtunneling.R.string.status_service_start_failed),
+                    ),
+                )
+            }
     }
 
     private fun persist(nextState: TunnelEditorState, removedForwardIds: List<String> = emptyList()) {
