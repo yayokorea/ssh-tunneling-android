@@ -106,5 +106,9 @@ jobs:
             gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
             gh release upload "${RELEASE_TAG}" app/build/outputs/apk/release/app-release.apk --repo "${GITHUB_REPOSITORY}" --clobber
           else
-            gh release create "${RELEASE_TAG}" app/build/outputs/apk/release/app-release.apk --repo "${GITHUB_REPOSITORY}" --target "${TARGET_REF}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+            if [[ "${TARGET_REF}" == refs/tags/* ]]; then
+              gh release create "${RELEASE_TAG}" app/build/outputs/apk/release/app-release.apk --repo "${GITHUB_REPOSITORY}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+            else
+              gh release create "${RELEASE_TAG}" app/build/outputs/apk/release/app-release.apk --repo "${GITHUB_REPOSITORY}" --target "${TARGET_REF}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+            fi
           fi
