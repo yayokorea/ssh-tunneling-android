@@ -15,5 +15,7 @@ data class AppUpdateState(
     val availableUpdate: AppUpdateInfo? = null,
     val isChecking: Boolean = false,
     val isDownloading: Boolean = false,
+    val downloadProgressPercent: Int? = null,
     val errorMessage: String? = null,
+    val statusMessage: String? = null,
 )
