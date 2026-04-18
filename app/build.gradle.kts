@@ -8,6 +8,8 @@ val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
 val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
 val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+val ciVersionName = System.getenv("VERSION_NAME") ?: "1.0"
 
 android {
     namespace = "com.yayo.sshtunneling"
@@ -17,8 +19,8 @@ android {
         applicationId = "com.yayo.sshtunneling"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = ciVersionCode
+        versionName = ciVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
