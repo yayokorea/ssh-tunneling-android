@@ -1,6 +1,7 @@
 package com.yayo.sshtunneling.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,18 +10,23 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Router
-import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,26 +36,29 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yayo.sshtunneling.model.AuthMode
+import com.yayo.sshtunneling.model.ForwardStatus
+import com.yayo.sshtunneling.model.HostProfile
+import com.yayo.sshtunneling.model.PortForwardRule
 import com.yayo.sshtunneling.model.TunnelConnectionState
+import com.yayo.sshtunneling.model.WidgetSlots
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,22 +67,11 @@ fun SshTunnelingApp(
     isExpanded: Boolean,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(uiState.status.state, uiState.status.message) {
-        val errorMessage = uiState.status.message
-        if (uiState.status.state == TunnelConnectionState.ERROR && !errorMessage.isNullOrBlank()) {
-            snackbarHostState.showSnackbar(errorMessage)
-        }
-    }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(text = "SSH Tunneling") },
-            )
+            TopAppBar(title = { Text("SSH Tunneling") })
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         Surface(
             modifier = Modifier
@@ -84,20 +82,20 @@ fun SshTunnelingApp(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                        .padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
-                    TunnelStatusPane(
-                        uiState = uiState,
-                        onToggleTunnel = viewModel::toggleTunnel,
-                        onDisconnect = viewModel::disconnectTunnel,
-                        modifier = Modifier.weight(0.95f),
-                    )
-                    TunnelEditorPane(
+                    OverviewPane(
                         uiState = uiState,
                         viewModel = viewModel,
-                        modifier = Modifier.weight(1.3f),
+                        modifier = Modifier.weight(0.95f),
+                    )
+                    EditorPane(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                        scrollable = true,
+                        modifier = Modifier.weight(1.35f),
                     )
                 }
             } else {
@@ -107,17 +105,10 @@ fun SshTunnelingApp(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     item {
-                        TunnelStatusPane(
-                            uiState = uiState,
-                            onToggleTunnel = viewModel::toggleTunnel,
-                            onDisconnect = viewModel::disconnectTunnel,
-                        )
+                        OverviewPane(uiState = uiState, viewModel = viewModel)
                     }
                     item {
-                        TunnelEditorPane(
-                            uiState = uiState,
-                            viewModel = viewModel,
-                        )
+                        EditorPane(uiState = uiState, viewModel = viewModel)
                     }
                 }
             }
@@ -126,23 +117,18 @@ fun SshTunnelingApp(
 }
 
 @Composable
-private fun TunnelStatusPane(
+private fun OverviewPane(
     uiState: TunnelUiState,
-    onToggleTunnel: () -> Unit,
-    onDisconnect: () -> Unit,
+    viewModel: TunnelViewModel,
     modifier: Modifier = Modifier,
 ) {
+    val connectedCount = uiState.statuses.values.count { it.state == TunnelConnectionState.CONNECTED }
+    val connectingCount = uiState.statuses.values.count { it.state == TunnelConnectionState.CONNECTING }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = when (uiState.status.state) {
-                TunnelConnectionState.CONNECTED -> MaterialTheme.colorScheme.primaryContainer
-                TunnelConnectionState.CONNECTING -> MaterialTheme.colorScheme.secondaryContainer
-                TunnelConnectionState.ERROR -> MaterialTheme.colorScheme.errorContainer
-                TunnelConnectionState.IDLE -> MaterialTheme.colorScheme.surfaceVariant
-            },
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -158,45 +144,165 @@ private fun TunnelStatusPane(
                         .background(MaterialTheme.colorScheme.surface, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Router,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                    Icon(Icons.Rounded.Router, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("멀티 호스트 터널", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        text = when (uiState.status.state) {
-                            TunnelConnectionState.CONNECTED -> "터널 연결됨"
-                            TunnelConnectionState.CONNECTING -> "터널 연결 중"
-                            TunnelConnectionState.ERROR -> "연결 실패"
-                            TunnelConnectionState.IDLE -> "대기 중"
-                        },
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                    Text(
-                        text = uiState.status.message ?: "홈 화면 위젯을 추가하면 한 번 눌러 바로 토글할 수 있습니다.",
+                        text = "연결됨 $connectedCount개, 연결 중 $connectingCount개. 위젯에는 지정한 6개 포워딩만 노출됩니다.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            Button(
-                onClick = onToggleTunnel,
+            HorizontalDivider()
+            Text("위젯 6슬롯", style = MaterialTheme.typography.titleMedium)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(WidgetSlots.COUNT) { slot ->
+                    val forward = uiState.appData.forwards.firstOrNull { it.widgetSlot == slot }
+                    val host = uiState.appData.hosts.firstOrNull { it.id == forward?.hostId }
+                    val status = forward?.let { uiState.statuses[it.id] }
+
+                    WidgetSlotRow(
+                        slot = slot,
+                        title = forward?.name ?: "비어 있음",
+                        subtitle = if (forward != null && host != null) {
+                            buildString {
+                                append(host.name)
+                                append(" · ")
+                                append(forward.localPort)
+                                append(" → ")
+                                append(forward.remoteHost)
+                                append(":")
+                                append(forward.remotePort)
+                                append(" · ")
+                                append(statusLabel(status))
+                            }
+                        } else {
+                            "앱에서 포워딩을 선택해 이 슬롯에 배치하세요."
+                        },
+                    )
+                }
+            }
+
+            FilledTonalButton(
+                onClick = {
+                    uiState.selectedForwardId?.let(viewModel::toggleForward)
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Rounded.PowerSettingsNew, contentDescription = null)
                 Spacer(modifier = Modifier.size(8.dp))
-                Text(if (uiState.status.state == TunnelConnectionState.CONNECTED) "터널 끊기" else "터널 연결")
+                Text("선택한 포워딩 토글")
+            }
+        }
+    }
+}
+
+@Composable
+private fun WidgetSlotRow(
+    slot: Int,
+    title: String,
+    subtitle: String,
+) {
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text("슬롯 ${slot + 1} · $title", style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun EditorPane(
+    uiState: TunnelUiState,
+    viewModel: TunnelViewModel,
+    scrollable: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val selectedHost = uiState.appData.hosts.firstOrNull { it.id == uiState.selectedHostId }
+    val hostForwards = uiState.appData.forwards.filter { it.hostId == selectedHost?.id }
+    val selectedForward = hostForwards.firstOrNull { it.id == uiState.selectedForwardId } ?: hostForwards.firstOrNull()
+
+    if (scrollable) {
+        LazyColumn(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                HostSelectorCard(
+                    uiState = uiState,
+                    onSelectHost = viewModel::selectHost,
+                    onAddHost = viewModel::addHost,
+                    onDeleteHost = viewModel::deleteSelectedHost,
+                )
             }
 
-            if (uiState.status.state == TunnelConnectionState.CONNECTED) {
-                FilledTonalButton(
-                    onClick = onDisconnect,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("서비스 종료")
+            selectedHost?.let { host ->
+                item {
+                    HostEditorCard(host = host, viewModel = viewModel)
+                }
+
+                item {
+                    ForwardListCard(
+                        forwards = hostForwards,
+                        statuses = uiState.statuses,
+                        selectedForwardId = selectedForward?.id,
+                        onSelectForward = viewModel::selectForward,
+                        onAddForward = viewModel::addForward,
+                        onToggleForward = viewModel::toggleForward,
+                        onDeleteForward = viewModel::deleteSelectedForward,
+                    )
+                }
+
+                selectedForward?.let { forward ->
+                    item {
+                        ForwardEditorCard(
+                            host = host,
+                            forward = forward,
+                            status = uiState.statuses[forward.id],
+                            viewModel = viewModel,
+                        )
+                    }
+                }
+            }
+        }
+    } else {
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            HostSelectorCard(
+                uiState = uiState,
+                onSelectHost = viewModel::selectHost,
+                onAddHost = viewModel::addHost,
+                onDeleteHost = viewModel::deleteSelectedHost,
+            )
+
+            selectedHost?.let { host ->
+                HostEditorCard(host = host, viewModel = viewModel)
+                ForwardListCard(
+                    forwards = hostForwards,
+                    statuses = uiState.statuses,
+                    selectedForwardId = selectedForward?.id,
+                    onSelectForward = viewModel::selectForward,
+                    onAddForward = viewModel::addForward,
+                    onToggleForward = viewModel::toggleForward,
+                    onDeleteForward = viewModel::deleteSelectedForward,
+                )
+                selectedForward?.let { forward ->
+                    ForwardEditorCard(
+                        host = host,
+                        forward = forward,
+                        status = uiState.statuses[forward.id],
+                        viewModel = viewModel,
+                    )
                 }
             }
         }
@@ -204,123 +310,268 @@ private fun TunnelStatusPane(
 }
 
 @Composable
-private fun TunnelEditorPane(
+private fun HostSelectorCard(
     uiState: TunnelUiState,
-    viewModel: TunnelViewModel,
-    modifier: Modifier = Modifier,
+    onSelectHost: (String) -> Unit,
+    onAddHost: () -> Unit,
+    onDeleteHost: () -> Unit,
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-    ) {
+    Card(shape = RoundedCornerShape(28.dp)) {
         Column(
             modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "터널 프로필",
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                text = "저장한 설정은 위젯과 포그라운드 서비스가 그대로 사용합니다.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            HorizontalDivider()
-
-            TunnelField(
-                value = uiState.profile.host,
-                label = "SSH Host",
-                onValueChange = { value -> viewModel.updateProfile { it.copy(host = value.trim()) } },
-            )
-            TunnelNumberField(
-                value = uiState.profile.port.toString(),
-                label = "SSH Port",
-                onValueChange = { value -> value.toIntOrNull()?.let { port -> viewModel.updateProfile { current -> current.copy(port = port) } } },
-            )
-            TunnelField(
-                value = uiState.profile.username,
-                label = "Username",
-                onValueChange = { value -> viewModel.updateProfile { it.copy(username = value.trim()) } },
-            )
-            AuthModeChips(
-                selectedMode = uiState.profile.authMode,
-                onSelected = viewModel::setAuthMode,
-            )
-
-            if (uiState.profile.authMode == AuthMode.PASSWORD) {
-                TunnelField(
-                    value = uiState.profile.password,
-                    label = "Password",
-                    onValueChange = { value -> viewModel.updateProfile { it.copy(password = value) } },
-                    isSecret = true,
-                )
-            } else {
-                TunnelField(
-                    value = uiState.profile.privateKey,
-                    label = "Private Key (PEM)",
-                    onValueChange = { value -> viewModel.updateProfile { it.copy(privateKey = value) } },
-                    singleLine = false,
-                )
-            }
-
-            TunnelNumberField(
-                value = uiState.profile.localPort.toString(),
-                label = "Local Port",
-                onValueChange = { value -> value.toIntOrNull()?.let { port -> viewModel.updateProfile { current -> current.copy(localPort = port) } } },
-            )
-            TunnelField(
-                value = uiState.profile.remoteHost,
-                label = "Remote Host",
-                onValueChange = { value -> viewModel.updateProfile { it.copy(remoteHost = value.trim()) } },
-            )
-            TunnelNumberField(
-                value = uiState.profile.remotePort.toString(),
-                label = "Remote Port",
-                onValueChange = { value -> value.toIntOrNull()?.let { port -> viewModel.updateProfile { current -> current.copy(remotePort = port) } } },
-            )
-            TunnelNumberField(
-                value = uiState.profile.keepAliveSeconds.toString(),
-                label = "Keep Alive Seconds",
-                onValueChange = { value -> value.toIntOrNull()?.let { seconds -> viewModel.updateProfile { current -> current.copy(keepAliveSeconds = seconds) } } },
-            )
-
-            FilledTonalButton(
-                onClick = viewModel::saveProfile,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.Save, contentDescription = null)
-                Spacer(modifier = Modifier.size(8.dp))
-                Text("프로필 저장")
+                Text("호스트", style = MaterialTheme.typography.titleLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onAddHost) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text("추가")
+                    }
+                    TextButton(onClick = onDeleteHost) {
+                        Icon(Icons.Rounded.Delete, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text("삭제")
+                    }
+                }
             }
 
-            Text(
-                text = "위젯에서는 마지막으로 저장된 프로필로 바로 연결합니다.",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(uiState.appData.hosts, key = { it.id }) { host ->
+                    FilterChip(
+                        selected = host.id == uiState.selectedHostId,
+                        onClick = { onSelectHost(host.id) },
+                        label = { Text(host.name.ifBlank { "이름 없는 호스트" }) },
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun AuthModeChips(
-    selectedMode: AuthMode,
-    onSelected: (AuthMode) -> Unit,
+private fun HostEditorCard(
+    host: HostProfile,
+    viewModel: TunnelViewModel,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(
-            selected = selectedMode == AuthMode.PASSWORD,
-            onClick = { onSelected(AuthMode.PASSWORD) },
-            label = { Text("Password") },
-            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-        )
-        FilterChip(
-            selected = selectedMode == AuthMode.PRIVATE_KEY,
-            onClick = { onSelected(AuthMode.PRIVATE_KEY) },
-            label = { Text("Private Key") },
-            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-        )
+    Card(shape = RoundedCornerShape(28.dp)) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("선택한 호스트 설정", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "같은 호스트 아래에 여러 포트 포워딩을 둘 수 있습니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
+
+            TunnelField(host.name, "Host Label") { value ->
+                viewModel.updateSelectedHost { it.copy(name = value) }
+            }
+            TunnelField(host.host, "SSH Host") { value ->
+                viewModel.updateSelectedHost { it.copy(host = value.trim()) }
+            }
+            TunnelNumberField(host.port.toString(), "SSH Port") { value ->
+                value.toIntOrNull()?.let { port -> viewModel.updateSelectedHost { current -> current.copy(port = port) } }
+            }
+            TunnelField(host.username, "Username") { value ->
+                viewModel.updateSelectedHost { it.copy(username = value.trim()) }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = host.authMode == AuthMode.PASSWORD,
+                    onClick = { viewModel.setSelectedHostAuthMode(AuthMode.PASSWORD) },
+                    label = { Text("Password") },
+                    leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                )
+                FilterChip(
+                    selected = host.authMode == AuthMode.PRIVATE_KEY,
+                    onClick = { viewModel.setSelectedHostAuthMode(AuthMode.PRIVATE_KEY) },
+                    label = { Text("Private Key") },
+                    leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                )
+            }
+
+            if (host.authMode == AuthMode.PASSWORD) {
+                TunnelField(host.password, "Password", isSecret = true) { value ->
+                    viewModel.updateSelectedHost { it.copy(password = value) }
+                }
+            } else {
+                TunnelField(host.privateKey, "Private Key (PEM)", singleLine = false) { value ->
+                    viewModel.updateSelectedHost { it.copy(privateKey = value) }
+                }
+            }
+
+            TunnelNumberField(host.keepAliveSeconds.toString(), "Keep Alive Seconds") { value ->
+                value.toIntOrNull()?.let { seconds -> viewModel.updateSelectedHost { current -> current.copy(keepAliveSeconds = seconds) } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForwardListCard(
+    forwards: List<PortForwardRule>,
+    statuses: Map<String, ForwardStatus>,
+    selectedForwardId: String?,
+    onSelectForward: (String) -> Unit,
+    onAddForward: () -> Unit,
+    onToggleForward: (String) -> Unit,
+    onDeleteForward: () -> Unit,
+) {
+    Card(shape = RoundedCornerShape(28.dp)) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("포트 포워딩", style = MaterialTheme.typography.titleLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onAddForward) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text("추가")
+                    }
+                    TextButton(onClick = onDeleteForward) {
+                        Icon(Icons.Rounded.Delete, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text("삭제")
+                    }
+                }
+            }
+
+            forwards.forEach { forward ->
+                val status = statuses[forward.id]
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (forward.id == selectedForwardId) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectForward(forward.id) },
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(forward.name, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${forward.localPort} → ${forward.remoteHost}:${forward.remotePort} · ${statusLabel(status)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        FilledTonalButton(onClick = { onToggleForward(forward.id) }) {
+                            Icon(Icons.Rounded.PowerSettingsNew, contentDescription = null)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForwardEditorCard(
+    host: HostProfile,
+    forward: PortForwardRule,
+    status: ForwardStatus?,
+    viewModel: TunnelViewModel,
+) {
+    Card(shape = RoundedCornerShape(28.dp)) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("포워딩 상세", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "${host.name}를 통해 이 포워딩만 독립적으로 켜고 끌 수 있습니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
+
+            TunnelField(forward.name, "Forward Label") { value ->
+                viewModel.updateSelectedForward { it.copy(name = value) }
+            }
+            TunnelNumberField(forward.localPort.toString(), "Local Port") { value ->
+                value.toIntOrNull()?.let { port -> viewModel.updateSelectedForward { current -> current.copy(localPort = port) } }
+            }
+            TunnelField(forward.remoteHost, "Remote Host") { value ->
+                viewModel.updateSelectedForward { it.copy(remoteHost = value.trim()) }
+            }
+            TunnelNumberField(forward.remotePort.toString(), "Remote Port") { value ->
+                value.toIntOrNull()?.let { port -> viewModel.updateSelectedForward { current -> current.copy(remotePort = port) } }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Widgets, contentDescription = null)
+                    Text("위젯 슬롯", style = MaterialTheme.typography.titleMedium)
+                }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        FilterChip(
+                            selected = forward.widgetSlot == null,
+                            onClick = { viewModel.assignWidgetSlot(null) },
+                            label = { Text("미지정") },
+                        )
+                    }
+                    items((0 until WidgetSlots.COUNT).toList()) { slot ->
+                        FilterChip(
+                            selected = forward.widgetSlot == slot,
+                            onClick = { viewModel.assignWidgetSlot(slot) },
+                            label = { Text("${slot + 1}") },
+                        )
+                    }
+                }
+            }
+
+            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("현재 상태", style = MaterialTheme.typography.titleSmall)
+                    Text(statusLabel(status), style = MaterialTheme.typography.bodyMedium)
+                    status?.message?.takeIf { it.isNotBlank() }?.let { message ->
+                        Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { viewModel.toggleForward(forward.id) }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Rounded.Link, contentDescription = null)
+                    Spacer(Modifier.size(8.dp))
+                    Text("토글")
+                }
+                OutlinedButton(onClick = { viewModel.assignWidgetSlot(null) }, modifier = Modifier.weight(1f)) {
+                    Text("위젯 해제")
+                }
+            }
+        }
     }
 }
 
@@ -339,7 +590,7 @@ private fun TunnelField(
         label = { Text(label) },
         singleLine = singleLine,
         minLines = if (singleLine) 1 else 6,
-        visualTransformation = if (isSecret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        visualTransformation = if (isSecret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next),
     )
 }
@@ -356,9 +607,15 @@ private fun TunnelNumberField(
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Number,
-            imeAction = ImeAction.Next,
-        ),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
     )
+}
+
+private fun statusLabel(status: ForwardStatus?): String {
+    return when (status?.state) {
+        TunnelConnectionState.CONNECTED -> "연결됨"
+        TunnelConnectionState.CONNECTING -> "연결 중"
+        TunnelConnectionState.ERROR -> "실패"
+        TunnelConnectionState.IDLE, null -> "대기"
+    }
 }
