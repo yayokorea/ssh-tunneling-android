@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
-import com.yayo.sshtunneling.BuildConfig
 import com.yayo.sshtunneling.R
 import java.io.File
 import java.net.HttpURLConnection
@@ -57,7 +56,7 @@ class GitHubReleaseUpdater(private val context: Context) {
     private fun launchInstaller(apkFile: File) {
         val apkUri = FileProvider.getUriForFile(
             context,
-            "${BuildConfig.APPLICATION_ID}.fileprovider",
+            "${context.packageName}.fileprovider",
             apkFile,
         )
 
@@ -102,12 +101,14 @@ class GitHubReleaseUpdater(private val context: Context) {
     }
 
     private fun <T> request(url: String, block: (HttpURLConnection) -> T): T {
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val versionName = packageInfo.versionName ?: "unknown"
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = true
             connectTimeout = 15_000
             readTimeout = 30_000
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "SSH Tunneling Android/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("User-Agent", "SSH Tunneling Android/$versionName")
         }
 
         return try {
