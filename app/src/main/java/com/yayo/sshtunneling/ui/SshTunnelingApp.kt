@@ -520,6 +520,8 @@ private fun HostEditorCard(
     viewModel: TunnelViewModel,
 ) {
     var privateKeyExpanded by rememberSaveable(host.id, host.authMode.name) { mutableStateOf(false) }
+    var sshPortInput by rememberSaveable(host.id, host.port) { mutableStateOf(host.port.toString()) }
+    var keepAliveInput by rememberSaveable(host.id, host.keepAliveSeconds) { mutableStateOf(host.keepAliveSeconds.toString()) }
 
     Card(shape = RoundedCornerShape(28.dp)) {
         Column(
@@ -548,7 +550,8 @@ private fun HostEditorCard(
                     viewModel.updateSelectedHost { it.copy(host = value.trim()) }
                 },
             )
-            TunnelNumberField(host.port.toString(), "SSH Port") { value ->
+            TunnelNumberField(sshPortInput, "SSH Port") { value ->
+                sshPortInput = value
                 value.toIntOrNull()?.let { port -> viewModel.updateSelectedHost { current -> current.copy(port = port) } }
             }
             TunnelField(
@@ -626,7 +629,8 @@ private fun HostEditorCard(
                 }
             }
 
-            TunnelNumberField(host.keepAliveSeconds.toString(), "Keep Alive Seconds") { value ->
+            TunnelNumberField(keepAliveInput, "Keep Alive Seconds") { value ->
+                keepAliveInput = value
                 value.toIntOrNull()?.let { seconds -> viewModel.updateSelectedHost { current -> current.copy(keepAliveSeconds = seconds) } }
             }
         }
@@ -715,6 +719,9 @@ private fun ForwardEditorCard(
     status: ForwardStatus?,
     viewModel: TunnelViewModel,
 ) {
+    var localPortInput by rememberSaveable(forward.id, forward.localPort) { mutableStateOf(forward.localPort.toString()) }
+    var remotePortInput by rememberSaveable(forward.id, forward.remotePort) { mutableStateOf(forward.remotePort.toString()) }
+
     Card(shape = RoundedCornerShape(28.dp)) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -735,7 +742,8 @@ private fun ForwardEditorCard(
                     viewModel.updateSelectedForward { it.copy(name = value) }
                 },
             )
-            TunnelNumberField(forward.localPort.toString(), "Local Port") { value ->
+            TunnelNumberField(localPortInput, "Local Port") { value ->
+                localPortInput = value
                 value.toIntOrNull()?.let { port -> viewModel.updateSelectedForward { current -> current.copy(localPort = port) } }
             }
             TunnelField(
@@ -745,7 +753,8 @@ private fun ForwardEditorCard(
                     viewModel.updateSelectedForward { it.copy(remoteHost = value.trim()) }
                 },
             )
-            TunnelNumberField(forward.remotePort.toString(), "Remote Port") { value ->
+            TunnelNumberField(remotePortInput, "Remote Port") { value ->
+                remotePortInput = value
                 value.toIntOrNull()?.let { port -> viewModel.updateSelectedForward { current -> current.copy(remotePort = port) } }
             }
 
@@ -830,9 +839,7 @@ private fun TunnelNumberField(
     OutlinedTextField(
         value = value,
         onValueChange = { input ->
-            val numericOnly = input.filter { it.isDigit() }
-            val newValue = if (numericOnly.isEmpty()) "0" else numericOnly
-            onValueChange(newValue)
+            onValueChange(input.filter { it.isDigit() })
         },
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
