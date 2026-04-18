@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Widgets
@@ -160,7 +161,7 @@ fun SshTunnelingApp(
                             )
                             DropdownMenuItem(
                                 text = { Text("업데이트 확인") },
-                                leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
+                                leadingIcon = { Icon(Icons.Rounded.Refresh, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.checkForAppUpdate(force = true)
