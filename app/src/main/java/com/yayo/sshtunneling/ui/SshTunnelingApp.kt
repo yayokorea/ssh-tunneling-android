@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -79,24 +78,17 @@ fun SshTunnelingApp(
                 .padding(innerPadding),
         ) {
             if (isExpanded) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.Top,
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    OverviewPane(
-                        uiState = uiState,
-                        viewModel = viewModel,
-                        modifier = Modifier.weight(0.95f),
-                    )
-                    EditorPane(
-                        uiState = uiState,
-                        viewModel = viewModel,
-                        scrollable = true,
-                        modifier = Modifier.weight(1.35f),
-                    )
+                    item {
+                        OverviewPane(uiState = uiState, viewModel = viewModel)
+                    }
+                    item {
+                        EditorPane(uiState = uiState, viewModel = viewModel)
+                    }
                 }
             } else {
                 LazyColumn(
@@ -149,7 +141,7 @@ private fun OverviewPane(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("멀티 호스트 터널", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        text = "연결됨 $connectedCount개, 연결 중 $connectingCount개. 위젯에는 지정한 6개 포워딩만 노출됩니다.",
+                        text = "연결됨 ${connectedCount}개, 연결 중 ${connectingCount}개. 위젯에는 지정한 6개 포워딩만 노출됩니다.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -372,18 +364,30 @@ private fun HostEditorCard(
             )
             HorizontalDivider()
 
-            TunnelField(host.name, "Host Label") { value ->
-                viewModel.updateSelectedHost { it.copy(name = value) }
-            }
-            TunnelField(host.host, "SSH Host") { value ->
-                viewModel.updateSelectedHost { it.copy(host = value.trim()) }
-            }
+            TunnelField(
+                value = host.name,
+                label = "Host Label",
+                onValueChange = { value ->
+                    viewModel.updateSelectedHost { it.copy(name = value) }
+                },
+            )
+            TunnelField(
+                value = host.host,
+                label = "SSH Host",
+                onValueChange = { value ->
+                    viewModel.updateSelectedHost { it.copy(host = value.trim()) }
+                },
+            )
             TunnelNumberField(host.port.toString(), "SSH Port") { value ->
                 value.toIntOrNull()?.let { port -> viewModel.updateSelectedHost { current -> current.copy(port = port) } }
             }
-            TunnelField(host.username, "Username") { value ->
-                viewModel.updateSelectedHost { it.copy(username = value.trim()) }
-            }
+            TunnelField(
+                value = host.username,
+                label = "Username",
+                onValueChange = { value ->
+                    viewModel.updateSelectedHost { it.copy(username = value.trim()) }
+                },
+            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
@@ -401,13 +405,23 @@ private fun HostEditorCard(
             }
 
             if (host.authMode == AuthMode.PASSWORD) {
-                TunnelField(host.password, "Password", isSecret = true) { value ->
-                    viewModel.updateSelectedHost { it.copy(password = value) }
-                }
+                TunnelField(
+                    value = host.password,
+                    label = "Password",
+                    onValueChange = { value ->
+                        viewModel.updateSelectedHost { it.copy(password = value) }
+                    },
+                    isSecret = true,
+                )
             } else {
-                TunnelField(host.privateKey, "Private Key (PEM)", singleLine = false) { value ->
-                    viewModel.updateSelectedHost { it.copy(privateKey = value) }
-                }
+                TunnelField(
+                    value = host.privateKey,
+                    label = "Private Key (PEM)",
+                    onValueChange = { value ->
+                        viewModel.updateSelectedHost { it.copy(privateKey = value) }
+                    },
+                    singleLine = false,
+                )
             }
 
             TunnelNumberField(host.keepAliveSeconds.toString(), "Keep Alive Seconds") { value ->
@@ -474,7 +488,7 @@ private fun ForwardListCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(modifier = Modifier.fillMaxWidth(0.78f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(forward.name, style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "${forward.localPort} → ${forward.remoteHost}:${forward.remotePort} · ${statusLabel(status)}",
@@ -512,15 +526,23 @@ private fun ForwardEditorCard(
             )
             HorizontalDivider()
 
-            TunnelField(forward.name, "Forward Label") { value ->
-                viewModel.updateSelectedForward { it.copy(name = value) }
-            }
+            TunnelField(
+                value = forward.name,
+                label = "Forward Label",
+                onValueChange = { value ->
+                    viewModel.updateSelectedForward { it.copy(name = value) }
+                },
+            )
             TunnelNumberField(forward.localPort.toString(), "Local Port") { value ->
                 value.toIntOrNull()?.let { port -> viewModel.updateSelectedForward { current -> current.copy(localPort = port) } }
             }
-            TunnelField(forward.remoteHost, "Remote Host") { value ->
-                viewModel.updateSelectedForward { it.copy(remoteHost = value.trim()) }
-            }
+            TunnelField(
+                value = forward.remoteHost,
+                label = "Remote Host",
+                onValueChange = { value ->
+                    viewModel.updateSelectedForward { it.copy(remoteHost = value.trim()) }
+                },
+            )
             TunnelNumberField(forward.remotePort.toString(), "Remote Port") { value ->
                 value.toIntOrNull()?.let { port -> viewModel.updateSelectedForward { current -> current.copy(remotePort = port) } }
             }
@@ -561,13 +583,13 @@ private fun ForwardEditorCard(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { viewModel.toggleForward(forward.id) }, modifier = Modifier.weight(1f)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { viewModel.toggleForward(forward.id) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.Link, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
                     Text("토글")
                 }
-                OutlinedButton(onClick = { viewModel.assignWidgetSlot(null) }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { viewModel.assignWidgetSlot(null) }, modifier = Modifier.fillMaxWidth()) {
                     Text("위젯 해제")
                 }
             }
