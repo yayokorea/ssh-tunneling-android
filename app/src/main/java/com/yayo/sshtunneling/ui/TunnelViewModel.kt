@@ -204,6 +204,22 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
             }
     }
 
+    fun exportSettingsJson(): String {
+        return preferences.exportAppData(editorState.value.appData)
+    }
+
+    fun importSettingsJson(rawJson: String): Result<Unit> = runCatching {
+        val importedData = preferences.parseAppData(rawJson)
+        TunnelRuntime.replace(getApplication(), emptyMap())
+        persist(
+            TunnelEditorState(
+                appData = importedData,
+                selectedHostId = importedData.hosts.firstOrNull()?.id,
+                selectedForwardId = importedData.forwards.firstOrNull()?.id,
+            ),
+        )
+    }
+
     private fun persist(nextState: TunnelEditorState, removedForwardIds: List<String> = emptyList()) {
         val normalized = ensureSeedData(nextState.appData)
         val selectedHostId = nextState.selectedHostId?.takeIf { hostId -> normalized.hosts.any { it.id == hostId } }

@@ -1,5 +1,8 @@
 package com.yayo.sshtunneling.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,43 +24,65 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Router
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yayo.sshtunneling.R
 import com.yayo.sshtunneling.model.AuthMode
 import com.yayo.sshtunneling.model.ForwardStatus
 import com.yayo.sshtunneling.model.HostProfile
 import com.yayo.sshtunneling.model.PortForwardRule
 import com.yayo.sshtunneling.model.TunnelConnectionState
 import com.yayo.sshtunneling.model.WidgetSlots
+import kotlinx.coroutines.launch
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,11 +91,91 @@ fun SshTunnelingApp(
     isExpanded: Boolean,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var menuExpanded by rememberSaveable { mutableStateOf(false) }
+    var showProjectInfo by rememberSaveable { mutableStateOf(false) }
+    var pendingImportJson by remember { mutableStateOf<String?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
+                writer.write(viewModel.exportSettingsJson())
+            } ?: error(context.getString(R.string.export_write_failed))
+        }.onSuccess {
+            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.export_success)) }
+        }.onFailure { error ->
+            scope.launch { snackbarHostState.showSnackbar(error.message ?: context.getString(R.string.export_write_failed)) }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                reader.readText()
+            } ?: error(context.getString(R.string.import_read_failed))
+        }.onSuccess { json ->
+            pendingImportJson = json
+        }.onFailure { error ->
+            scope.launch { snackbarHostState.showSnackbar(error.message ?: context.getString(R.string.import_read_failed)) }
+        }
+    }
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("SSH Tunneling") })
+            TopAppBar(
+                title = { Text("SSH Tunneling") },
+                actions = {
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("설정 내보내기") },
+                                leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    exportLauncher.launch("ssh-tunneling-settings.json")
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("설정 불러오기") },
+                                leadingIcon = { Icon(Icons.Rounded.Upload, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    importLauncher.launch(arrayOf("application/json", "text/*"))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("프로젝트 정보") },
+                                leadingIcon = { Icon(Icons.Rounded.Info, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showProjectInfo = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("GitHub 보기") },
+                                leadingIcon = { Icon(Icons.Rounded.OpenInNew, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    uriHandler.openUri(context.getString(R.string.github_repository_url))
+                                },
+                            )
+                        }
+                    }
+                },
+            )
         },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
     ) { innerPadding ->
         Surface(
             modifier = Modifier
@@ -105,6 +210,29 @@ fun SshTunnelingApp(
                 }
             }
         }
+    }
+
+    if (showProjectInfo) {
+        ProjectInfoDialog(
+            onDismiss = { showProjectInfo = false },
+            onOpenGithub = { uriHandler.openUri(context.getString(R.string.github_repository_url)) },
+        )
+    }
+
+    pendingImportJson?.let { rawJson ->
+        ImportConfirmDialog(
+            onDismiss = { pendingImportJson = null },
+            onConfirm = {
+                pendingImportJson = null
+                viewModel.importSettingsJson(rawJson)
+                    .onSuccess {
+                        scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.import_success)) }
+                    }
+                    .onFailure { error ->
+                        scope.launch { snackbarHostState.showSnackbar(error.message ?: context.getString(R.string.import_invalid_file)) }
+                    }
+            },
+        )
     }
 }
 
@@ -351,6 +479,8 @@ private fun HostEditorCard(
     host: HostProfile,
     viewModel: TunnelViewModel,
 ) {
+    var privateKeyExpanded by rememberSaveable(host.id, host.authMode.name) { mutableStateOf(false) }
+
     Card(shape = RoundedCornerShape(28.dp)) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -414,14 +544,46 @@ private fun HostEditorCard(
                     isSecret = true,
                 )
             } else {
-                TunnelField(
-                    value = host.privateKey,
-                    label = "Private Key (PEM)",
-                    onValueChange = { value ->
-                        viewModel.updateSelectedHost { it.copy(privateKey = value) }
-                    },
-                    singleLine = false,
-                )
+                if (privateKeyExpanded) {
+                    TunnelField(
+                        value = host.privateKey,
+                        label = "Private Key (PEM)",
+                        onValueChange = { value -> viewModel.updateSelectedHost { it.copy(privateKey = value) } },
+                        singleLine = false,
+                        maxLinesWhenExpanded = 8,
+                    )
+                } else {
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text("Private Key (PEM)", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = host.privateKey.previewLabel(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = host.privateKey.previewLabel(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = { privateKeyExpanded = !privateKeyExpanded }) {
+                        Text(if (privateKeyExpanded) "접기" else "펼치기")
+                    }
+                }
             }
 
             TunnelNumberField(host.keepAliveSeconds.toString(), "Keep Alive Seconds") { value ->
@@ -604,6 +766,7 @@ private fun TunnelField(
     onValueChange: (String) -> Unit,
     singleLine: Boolean = true,
     isSecret: Boolean = false,
+    maxLinesWhenExpanded: Int = 6,
 ) {
     OutlinedTextField(
         value = value,
@@ -611,7 +774,8 @@ private fun TunnelField(
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
         singleLine = singleLine,
-        minLines = if (singleLine) 1 else 6,
+        minLines = if (singleLine) 1 else maxLinesWhenExpanded,
+        maxLines = if (singleLine) 1 else maxLinesWhenExpanded,
         visualTransformation = if (isSecret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next),
     )
@@ -640,4 +804,79 @@ private fun statusLabel(status: ForwardStatus?): String {
         TunnelConnectionState.ERROR -> "실패"
         TunnelConnectionState.IDLE, null -> "대기"
     }
+}
+
+@Composable
+private fun ProjectInfoDialog(
+    onDismiss: () -> Unit,
+    onOpenGithub: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("닫기")
+            }
+        },
+        title = { Text("프로젝트 정보") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Image(
+                    painter = painterResource(id = R.drawable.credit_icon),
+                    contentDescription = "Yayo credit image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(24.dp))
+                        .padding(24.dp),
+                    contentScale = ContentScale.Fit,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Built by Yayo", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "SSH Tunneling for one-tap multi-host forwarding.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                FilledTonalButton(
+                    onClick = onOpenGithub,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Rounded.OpenInNew, contentDescription = null)
+                    Spacer(Modifier.size(8.dp))
+                    Text("GitHub Repository")
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun ImportConfirmDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("덮어쓰기")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("취소")
+            }
+        },
+        title = { Text("설정 불러오기") },
+        text = {
+            Text("현재 호스트, 포워딩, 위젯 슬롯, 비밀번호, private key를 모두 새 파일 내용으로 교체합니다.")
+        },
+    )
+}
+
+private fun String.previewLabel(): String {
+    if (isBlank()) return "키가 비어 있습니다."
+    val firstLine = lineSequence().firstOrNull()?.trim().orEmpty()
+    return if (length > 48) "$firstLine ... (${length} chars)" else firstLine
 }

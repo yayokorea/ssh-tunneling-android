@@ -36,15 +36,17 @@ class TunnelPreferences(context: Context) {
 
     fun loadAppData(): TunnelAppData {
         val rawJson = securePrefs.getString(KEY_APP_DATA, null) ?: return TunnelAppData()
-        val root = runCatching { JSONObject(rawJson) }.getOrElse { return TunnelAppData() }
-
-        val hosts = root.optJSONArray(KEY_HOSTS)?.toHostProfiles().orEmpty()
-        val forwards = root.optJSONArray(KEY_FORWARDS)?.toForwardRules().orEmpty()
-        return TunnelAppData(hosts = hosts, forwards = forwards)
+        return parseAppData(rawJson)
     }
 
     fun saveAppData(data: TunnelAppData) {
-        val json = JSONObject().apply {
+        securePrefs.edit {
+            putString(KEY_APP_DATA, exportAppData(data))
+        }
+    }
+
+    fun exportAppData(data: TunnelAppData): String {
+        return JSONObject().apply {
             put(KEY_HOSTS, JSONArray().apply {
                 data.hosts.forEach { host ->
                     put(JSONObject().apply {
@@ -75,11 +77,14 @@ class TunnelPreferences(context: Context) {
                     })
                 }
             })
-        }
+        }.toString()
+    }
 
-        securePrefs.edit {
-            putString(KEY_APP_DATA, json.toString())
-        }
+    fun parseAppData(rawJson: String): TunnelAppData {
+        val root = JSONObject(rawJson)
+        val hosts = root.optJSONArray(KEY_HOSTS)?.toHostProfiles().orEmpty()
+        val forwards = root.optJSONArray(KEY_FORWARDS)?.toForwardRules().orEmpty()
+        return TunnelAppData(hosts = hosts, forwards = forwards)
     }
 
     fun loadStatuses(): Map<String, ForwardStatus> {

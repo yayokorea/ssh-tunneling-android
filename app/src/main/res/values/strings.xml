@@ -7,6 +7,12 @@
     <string name="status_profile_incomplete">Save a complete host and forward before starting the tunnel.</string>
     <string name="status_service_start_failed">Could not start tunnel service.</string>
     <string name="status_unknown_error">Unknown SSH tunnel error</string>
+    <string name="export_success">설정을 내보냈습니다.</string>
+    <string name="export_write_failed">설정 파일을 쓸 수 없습니다.</string>
+    <string name="import_success">설정을 불러왔습니다.</string>
+    <string name="import_read_failed">설정 파일을 읽을 수 없습니다.</string>
+    <string name="import_invalid_file">설정 파일 형식이 올바르지 않습니다.</string>
+    <string name="github_repository_url">https://github.com/yayokorea/ssh-tunneling-android</string>
     <string name="widget_description">One-tap SSH tunnel toggle</string>
     <string name="status_connecting_item">Starting %1$s</string>
     <string name="status_connected_item">%1$s: localhost:%2$d → %3$s:%4$d</string>
