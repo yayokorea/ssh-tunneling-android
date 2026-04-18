@@ -47,7 +47,7 @@ class TunnelActionReceiver : BroadcastReceiver() {
                 }
 
                 if (vibrator?.hasVibrator() == true) {
-                    val effect = VibrationEffect.createOneShot(18L, VibrationEffect.DEFAULT_AMPLITUDE)
+                    val effect = VibrationEffect.createOneShot(8L, 80)
                     vibrator.vibrate(effect)
                 }
             }
