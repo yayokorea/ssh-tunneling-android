@@ -15,12 +15,5 @@
     <string name="notification_summary_connected">%1$d tunnels connected</string>
     <string name="notification_summary_connecting">%1$d tunnels connecting</string>
     <string name="notification_summary_mixed">%1$d connected, %2$d connecting</string>
-    <string name="widget_title">SSH Ports</string>
-    <string name="widget_subtitle">Tap any slot to toggle that forward</string>
     <string name="widget_empty_title">Empty</string>
-    <string name="widget_empty_detail">Assign in app</string>
-    <string name="widget_slot_connected">Connected · %1$d</string>
-    <string name="widget_slot_connecting">Connecting…</string>
-    <string name="widget_slot_error">Failed · tap retry</string>
-    <string name="widget_slot_idle">%1$s · %2$d</string>
 </resources>

@@ -40,15 +40,6 @@ class TunnelWidgetProvider : AppWidgetProvider() {
             R.id.widget_slot_title_5,
         )
 
-        private val detailIds = intArrayOf(
-            R.id.widget_slot_detail_0,
-            R.id.widget_slot_detail_1,
-            R.id.widget_slot_detail_2,
-            R.id.widget_slot_detail_3,
-            R.id.widget_slot_detail_4,
-            R.id.widget_slot_detail_5,
-        )
-
         fun refreshAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             val component = ComponentName(context, TunnelWidgetProvider::class.java)
@@ -63,9 +54,6 @@ class TunnelWidgetProvider : AppWidgetProvider() {
             val statuses = preferences.loadStatuses()
             val views = RemoteViews(context.packageName, R.layout.widget_tunnel)
 
-            views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_title))
-            views.setTextViewText(R.id.widget_subtitle, context.getString(R.string.widget_subtitle))
-
             repeat(WidgetSlots.COUNT) { slot ->
                 val forward = data.forwards.firstOrNull { it.widgetSlot == slot }
                 val host = data.hosts.firstOrNull { it.id == forward?.hostId }
@@ -73,21 +61,11 @@ class TunnelWidgetProvider : AppWidgetProvider() {
 
                 if (forward == null || host == null) {
                     views.setTextViewText(titleIds[slot], context.getString(R.string.widget_empty_title))
-                    views.setTextViewText(detailIds[slot], context.getString(R.string.widget_empty_detail))
+                    views.setInt(cellIds[slot], "setBackgroundResource", R.drawable.widget_slot_idle)
                     views.setOnClickPendingIntent(cellIds[slot], buildOpenAppIntent(context, slot))
                 } else {
-                    val detail = when (status?.state) {
-                        TunnelConnectionState.CONNECTED -> context.getString(R.string.widget_slot_connected, forward.localPort)
-                        TunnelConnectionState.CONNECTING -> context.getString(R.string.widget_slot_connecting)
-                        TunnelConnectionState.ERROR -> context.getString(R.string.widget_slot_error)
-                        TunnelConnectionState.IDLE, null -> context.getString(
-                            R.string.widget_slot_idle,
-                            host.name,
-                            forward.localPort,
-                        )
-                    }
                     views.setTextViewText(titleIds[slot], forward.name)
-                    views.setTextViewText(detailIds[slot], detail)
+                    views.setInt(cellIds[slot], "setBackgroundResource", backgroundFor(status?.state))
                     views.setOnClickPendingIntent(cellIds[slot], buildToggleIntent(context, forward.id, slot))
                 }
             }
@@ -116,6 +94,15 @@ class TunnelWidgetProvider : AppWidgetProvider() {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
+        }
+
+        private fun backgroundFor(state: TunnelConnectionState?): Int {
+            return when (state) {
+                TunnelConnectionState.CONNECTED -> R.drawable.widget_slot_connected
+                TunnelConnectionState.CONNECTING -> R.drawable.widget_slot_connecting
+                TunnelConnectionState.ERROR -> R.drawable.widget_slot_error
+                TunnelConnectionState.IDLE, null -> R.drawable.widget_slot_idle
+            }
         }
     }
 }
