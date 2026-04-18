@@ -12,8 +12,11 @@ import com.yayo.sshtunneling.model.TunnelAppData
 import com.yayo.sshtunneling.model.WidgetSlots
 import com.yayo.sshtunneling.service.TunnelForegroundService
 import com.yayo.sshtunneling.service.TunnelRuntime
+import com.yayo.sshtunneling.update.AppUpdateState
+import com.yayo.sshtunneling.update.GitHubReleaseUpdater
 import com.yayo.sshtunneling.widget.TunnelWidgetProvider
 import java.util.UUID
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +28,7 @@ data class TunnelUiState(
     val statuses: Map<String, ForwardStatus> = emptyMap(),
     val selectedHostId: String? = null,
     val selectedForwardId: String? = null,
+    val updateState: AppUpdateState = AppUpdateState(),
 )
 
 private data class TunnelEditorState(
@@ -35,18 +39,22 @@ private data class TunnelEditorState(
 
 class TunnelViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = TunnelPreferences(application)
+    private val updater = GitHubReleaseUpdater(application)
     private val editorState = MutableStateFlow(loadInitialState())
+    private val updateState = MutableStateFlow(AppUpdateState())
+    private var hasCheckedForUpdate = false
 
     val uiState: StateFlow<TunnelUiState>
 
     init {
         TunnelRuntime.initialize(application)
-        uiState = combine(editorState, TunnelRuntime.statuses) { editor, statuses ->
+        uiState = combine(editorState, TunnelRuntime.statuses, updateState) { editor, statuses, appUpdate ->
             TunnelUiState(
                 appData = editor.appData,
                 statuses = statuses,
                 selectedHostId = editor.selectedHostId,
                 selectedForwardId = editor.selectedForwardId,
+                updateState = appUpdate,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -56,8 +64,53 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
                 statuses = TunnelRuntime.statuses.value,
                 selectedHostId = editorState.value.selectedHostId,
                 selectedForwardId = editorState.value.selectedForwardId,
+                updateState = updateState.value,
             ),
         )
+    }
+
+    fun checkForAppUpdate() {
+        if (hasCheckedForUpdate) return
+        hasCheckedForUpdate = true
+        updateState.value = updateState.value.copy(isChecking = true)
+
+        viewModelScope.launch {
+            val availableUpdate = runCatching { updater.fetchAvailableUpdate() }.getOrNull()
+            updateState.value = updateState.value.copy(
+                availableUpdate = availableUpdate,
+                isChecking = false,
+            )
+        }
+    }
+
+    fun dismissAvailableUpdate() {
+        updateState.value = updateState.value.copy(availableUpdate = null)
+    }
+
+    fun clearUpdateError() {
+        updateState.value = updateState.value.copy(errorMessage = null)
+    }
+
+    fun downloadAndInstallUpdate() {
+        val availableUpdate = updateState.value.availableUpdate ?: return
+        if (updateState.value.isDownloading) return
+
+        updateState.value = updateState.value.copy(isDownloading = true, errorMessage = null)
+        viewModelScope.launch {
+            runCatching {
+                updater.downloadAndLaunchInstaller(availableUpdate)
+            }.onSuccess {
+                updateState.value = updateState.value.copy(
+                    availableUpdate = null,
+                    isDownloading = false,
+                )
+            }.onFailure { error ->
+                updateState.value = updateState.value.copy(
+                    isDownloading = false,
+                    errorMessage = error.message,
+                )
+            }
+        }
     }
 
     fun selectHost(hostId: String) {

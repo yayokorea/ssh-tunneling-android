@@ -13,6 +13,7 @@
     <string name="import_read_failed">설정 파일을 읽을 수 없습니다.</string>
     <string name="import_invalid_file">설정 파일 형식이 올바르지 않습니다.</string>
     <string name="github_repository_url">https://github.com/yayokorea/ssh-tunneling-android</string>
+    <string name="github_latest_manifest_url">https://github.com/yayokorea/ssh-tunneling-android/releases/latest/download/manifest.json</string>
     <string name="widget_description">One-tap SSH tunnel toggle</string>
     <string name="status_connecting_item">Starting %1$s</string>
     <string name="status_connected_item">%1$s: localhost:%2$d → %3$s:%4$d</string>
@@ -22,4 +23,13 @@
     <string name="notification_summary_connecting">%1$d tunnels connecting</string>
     <string name="notification_summary_mixed">%1$d connected, %2$d connecting</string>
     <string name="widget_empty_title">Empty</string>
+    <string name="update_available_title">업데이트 가능</string>
+    <string name="update_available_message">버전 %1$s를 다운로드해 설치할 수 있습니다.</string>
+    <string name="update_install">다운로드 및 설치</string>
+    <string name="update_later">나중에</string>
+    <string name="update_release_notes">릴리즈 보기</string>
+    <string name="update_downloading">업데이트를 다운로드하는 중입니다. 완료되면 설치 화면이 열립니다.</string>
+    <string name="update_install_permission_required">알 수 없는 앱 설치 권한을 허용한 뒤 다시 시도하세요.</string>
+    <string name="update_error_title">업데이트 실패</string>
+    <string name="update_error_hash_mismatch">다운로드한 APK 무결성 검증에 실패했습니다.</string>
 </resources>
