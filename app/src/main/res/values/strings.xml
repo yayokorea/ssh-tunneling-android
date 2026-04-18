@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">SSH Tunneling</string>
+    <string name="notification_title">SSH tunnel running</string>
+    <string name="notification_channel_name">SSH tunnel status</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="status_connecting">Connecting tunnel…</string>
+    <string name="status_connecting_message">SSH session and local forwarding are starting.</string>
+    <string name="status_connected_message">localhost:%1$d is forwarding to %2$s:%3$d</string>
+    <string name="status_profile_incomplete">Save a complete profile before starting the tunnel.</string>
+    <string name="status_unknown_error">Unknown SSH tunnel error</string>
+    <string name="status_idle_message">Tunnel is stopped. Tap the widget or app button to connect.</string>
+    <string name="widget_button_connect">Connect</string>
+    <string name="widget_button_disconnect">Disconnect</string>
+    <string name="widget_button_connecting">Connecting…</string>
+    <string name="widget_button_retry">Retry</string>
+    <string name="widget_status_idle">Idle</string>
+    <string name="widget_status_connecting">Connecting</string>
+    <string name="widget_status_connected">Connected</string>
+    <string name="widget_status_error">Error</string>
+    <string name="widget_message_default">Add your profile in the app, then tap once here.</string>
+</resources>
