@@ -7,6 +7,7 @@
     <string name="status_profile_incomplete">Save a complete host and forward before starting the tunnel.</string>
     <string name="status_service_start_failed">Could not start tunnel service.</string>
     <string name="status_unknown_error">Unknown SSH tunnel error</string>
+    <string name="status_connection_lost">SSH tunnel connection was lost.</string>
     <string name="export_success">설정을 내보냈습니다.</string>
     <string name="export_write_failed">설정 파일을 쓸 수 없습니다.</string>
     <string name="import_success">설정을 불러왔습니다.</string>

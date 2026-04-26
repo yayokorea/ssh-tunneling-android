@@ -12,6 +12,7 @@ class SshTunnelManager(
 ) {
     private var session: Session? = null
 
+    @Synchronized
     fun connect(): Int {
         val jsch = JSch()
         if (host.authMode == AuthMode.PRIVATE_KEY) {
@@ -33,20 +34,35 @@ class SshTunnelManager(
             connect(15_000)
         }
 
-        val assignedPort = createdSession.setPortForwardingL(
-            forward.localPort,
-            forward.remoteHost,
-            forward.remotePort,
-        )
-
-        session = createdSession
-        return assignedPort
+        return runCatching {
+            createdSession.setPortForwardingL(
+                forward.localPort,
+                forward.remoteHost,
+                forward.remotePort,
+            )
+        }.onSuccess {
+            session = createdSession
+        }.onFailure {
+            createdSession.disconnect()
+        }.getOrThrow()
     }
 
+    @Synchronized
     fun disconnect() {
         session?.disconnect()
         session = null
     }
 
+    @Synchronized
     fun isConnected(): Boolean = session?.isConnected == true
+
+    @Synchronized
+    fun verifyConnected(): Boolean {
+        val currentSession = session ?: return false
+        if (!currentSession.isConnected) return false
+        return runCatching {
+            currentSession.sendKeepAliveMsg()
+            currentSession.isConnected
+        }.getOrDefault(false)
+    }
 }
