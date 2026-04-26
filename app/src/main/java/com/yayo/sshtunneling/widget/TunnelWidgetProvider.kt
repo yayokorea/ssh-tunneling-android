@@ -13,6 +13,7 @@ import com.yayo.sshtunneling.data.TunnelPreferences
 import com.yayo.sshtunneling.model.TunnelConnectionState
 import com.yayo.sshtunneling.model.WidgetSlots
 import com.yayo.sshtunneling.service.TunnelForegroundService
+import com.yayo.sshtunneling.service.TunnelRuntime
 
 class TunnelWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -51,7 +52,7 @@ class TunnelWidgetProvider : AppWidgetProvider() {
         private fun buildRemoteViews(context: Context): RemoteViews {
             val preferences = TunnelPreferences(context)
             val data = preferences.loadAppData()
-            val statuses = preferences.loadStatuses()
+            val statuses = TunnelRuntime.statuses.value.takeIf { it.isNotEmpty() } ?: preferences.loadStatuses()
             val views = RemoteViews(context.packageName, R.layout.widget_tunnel)
 
             repeat(WidgetSlots.COUNT) { slot ->

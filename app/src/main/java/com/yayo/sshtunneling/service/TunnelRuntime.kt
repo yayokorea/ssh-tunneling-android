@@ -12,6 +12,7 @@ object TunnelRuntime {
     val statuses: StateFlow<Map<String, ForwardStatus>> = _statuses.asStateFlow()
 
     fun initialize(context: Context) {
+        if (_statuses.value.isNotEmpty()) return
         _statuses.value = TunnelPreferences(context).loadStatuses()
     }
 

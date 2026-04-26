@@ -22,12 +22,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class TunnelForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val tunnelManagers = mutableMapOf<String, SshTunnelManager>()
     private val connectJobs = mutableMapOf<String, Job>()
+    private val monitorJobs = mutableMapOf<String, Job>()
 
     override fun onCreate() {
         super.onCreate()
@@ -49,8 +52,19 @@ class TunnelForegroundService : Service() {
 
     override fun onDestroy() {
         connectJobs.values.forEach { it.cancel() }
-        tunnelManagers.values.forEach { it.disconnect() }
+        monitorJobs.values.forEach { it.cancel() }
+        tunnelManagers.toMap().forEach { (forwardId, manager) ->
+            manager.disconnect()
+            updateStatus(
+                ForwardStatus(
+                    forwardId = forwardId,
+                    state = TunnelConnectionState.IDLE,
+                    message = getString(R.string.status_idle_item),
+                )
+            )
+        }
         connectJobs.clear()
+        monitorJobs.clear()
         tunnelManagers.clear()
         serviceScope.cancel()
         super.onDestroy()
@@ -100,6 +114,7 @@ class TunnelForegroundService : Service() {
                 val manager = SshTunnelManager(host, forward)
                 val localPort = manager.connect()
                 tunnelManagers[forwardId] = manager
+                startMonitor(forwardId, manager, host.keepAliveSeconds)
                 updateStatus(
                     ForwardStatus(
                         forwardId = forwardId,
@@ -118,6 +133,7 @@ class TunnelForegroundService : Service() {
             connectJobs.remove(forwardId)
             result.onFailure { error ->
                 tunnelManagers.remove(forwardId)?.disconnect()
+                monitorJobs.remove(forwardId)?.cancel()
                 updateStatus(
                     ForwardStatus(
                         forwardId = forwardId,
@@ -132,6 +148,7 @@ class TunnelForegroundService : Service() {
 
     private fun disconnectTunnel(forwardId: String, updateIdleState: Boolean = true) {
         connectJobs.remove(forwardId)?.cancel()
+        monitorJobs.remove(forwardId)?.cancel()
         tunnelManagers.remove(forwardId)?.disconnect()
         if (updateIdleState) {
             updateStatus(
@@ -146,9 +163,32 @@ class TunnelForegroundService : Service() {
     }
 
     private fun disconnectAllTunnels() {
-        val forwardIds = (tunnelManagers.keys + connectJobs.keys).toSet()
+        val forwardIds = (tunnelManagers.keys + connectJobs.keys + monitorJobs.keys).toSet()
         forwardIds.forEach { forwardId ->
             disconnectTunnel(forwardId)
+        }
+    }
+
+    private fun startMonitor(forwardId: String, manager: SshTunnelManager, keepAliveSeconds: Int) {
+        monitorJobs.remove(forwardId)?.cancel()
+        val intervalMillis = keepAliveSeconds.coerceAtLeast(MIN_MONITOR_INTERVAL_SECONDS) * 1_000L
+        monitorJobs[forwardId] = serviceScope.launch {
+            while (isActive) {
+                delay(intervalMillis)
+                if (!manager.verifyConnected()) {
+                    tunnelManagers.remove(forwardId)?.disconnect()
+                    monitorJobs.remove(forwardId)
+                    updateStatus(
+                        ForwardStatus(
+                            forwardId = forwardId,
+                            state = TunnelConnectionState.ERROR,
+                            message = getString(R.string.status_connection_lost),
+                        )
+                    )
+                    stopIfIdle()
+                    break
+                }
+            }
         }
     }
 
@@ -223,6 +263,7 @@ class TunnelForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "ssh_tunnel_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val MIN_MONITOR_INTERVAL_SECONDS = 5
 
         const val ACTION_CONNECT = "com.yayo.sshtunneling.action.CONNECT"
         const val ACTION_DISCONNECT = "com.yayo.sshtunneling.action.DISCONNECT"

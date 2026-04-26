@@ -95,13 +95,19 @@ class TunnelPreferences(context: Context) {
         while (keys.hasNext()) {
             val forwardId = keys.next()
             val item = root.optJSONObject(forwardId) ?: continue
-            val state = runCatching {
+            val savedState = runCatching {
                 TunnelConnectionState.valueOf(item.optString(KEY_STATE, TunnelConnectionState.IDLE.name))
             }.getOrDefault(TunnelConnectionState.IDLE)
+            val state = when (savedState) {
+                TunnelConnectionState.CONNECTED,
+                TunnelConnectionState.CONNECTING -> TunnelConnectionState.IDLE
+                TunnelConnectionState.IDLE,
+                TunnelConnectionState.ERROR -> savedState
+            }
             statuses[forwardId] = ForwardStatus(
                 forwardId = forwardId,
                 state = state,
-                message = item.optString(KEY_MESSAGE).takeIf { it.isNotBlank() },
+                message = if (state == savedState) item.optString(KEY_MESSAGE).takeIf { it.isNotBlank() } else null,
             )
         }
         return statuses
