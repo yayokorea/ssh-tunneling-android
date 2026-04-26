@@ -6,9 +6,13 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.Context.VIBRATOR_MANAGER_SERVICE
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.yayo.sshtunneling.MainActivity
@@ -39,10 +43,11 @@ class TunnelForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val triggerHaptic = intent?.getBooleanExtra(EXTRA_TRIGGER_HAPTIC, false) == true
         when (intent?.action) {
-            ACTION_CONNECT -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let(::connectTunnel)
-            ACTION_DISCONNECT -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let(::disconnectTunnel)
-            ACTION_TOGGLE -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let(::toggleTunnel)
+            ACTION_CONNECT -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let { connectTunnel(it, triggerHaptic) }
+            ACTION_DISCONNECT -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let { disconnectTunnel(it, triggerHaptic = triggerHaptic) }
+            ACTION_TOGGLE -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let { toggleTunnel(it, triggerHaptic) }
             ACTION_DISCONNECT_ALL -> disconnectAllTunnels()
         }
         return START_STICKY
@@ -70,17 +75,18 @@ class TunnelForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun toggleTunnel(forwardId: String) {
+    private fun toggleTunnel(forwardId: String, triggerHaptic: Boolean = false) {
         val state = TunnelRuntime.statuses.value[forwardId]?.state
         if (state == TunnelConnectionState.CONNECTED || state == TunnelConnectionState.CONNECTING) {
-            disconnectTunnel(forwardId)
+            disconnectTunnel(forwardId, triggerHaptic = triggerHaptic)
         } else {
-            connectTunnel(forwardId)
+            connectTunnel(forwardId, triggerHaptic)
         }
     }
 
-    private fun connectTunnel(forwardId: String) {
+    private fun connectTunnel(forwardId: String, triggerHaptic: Boolean = false) {
         if (connectJobs[forwardId]?.isActive == true || tunnelManagers[forwardId]?.isConnected() == true) {
+            if (triggerHaptic) triggerHapticFeedback()
             return
         }
 
@@ -101,6 +107,7 @@ class TunnelForegroundService : Service() {
         }
 
         startForeground(NOTIFICATION_ID, buildNotification())
+        if (triggerHaptic) triggerHapticFeedback()
         updateStatus(
             ForwardStatus(
                 forwardId = forwardId,
@@ -146,7 +153,12 @@ class TunnelForegroundService : Service() {
         }
     }
 
-    private fun disconnectTunnel(forwardId: String, updateIdleState: Boolean = true) {
+    private fun disconnectTunnel(
+        forwardId: String,
+        updateIdleState: Boolean = true,
+        triggerHaptic: Boolean = false,
+    ) {
+        if (triggerHaptic) triggerHapticFeedback()
         connectJobs.remove(forwardId)?.cancel()
         monitorJobs.remove(forwardId)?.cancel()
         tunnelManagers.remove(forwardId)?.disconnect()
@@ -211,6 +223,23 @@ class TunnelForegroundService : Service() {
         manager.notify(NOTIFICATION_ID, buildNotification())
     }
 
+    private fun triggerHapticFeedback() {
+        runCatching {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val manager = getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                manager?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+
+            if (vibrator?.hasVibrator() == true) {
+                val effect = VibrationEffect.createOneShot(18L, 90)
+                vibrator.vibrate(effect)
+            }
+        }
+    }
+
     private fun buildNotification(): Notification {
         val statuses = TunnelRuntime.statuses.value.values
         val connectedCount = statuses.count { it.state == TunnelConnectionState.CONNECTED }
@@ -270,11 +299,20 @@ class TunnelForegroundService : Service() {
         const val ACTION_TOGGLE = "com.yayo.sshtunneling.action.TOGGLE"
         const val ACTION_DISCONNECT_ALL = "com.yayo.sshtunneling.action.DISCONNECT_ALL"
         const val EXTRA_FORWARD_ID = "extra_forward_id"
+        const val EXTRA_TRIGGER_HAPTIC = "extra_trigger_haptic"
 
-        fun start(context: Context, action: String, forwardId: String? = null): Result<Unit> = runCatching {
+        fun start(
+            context: Context,
+            action: String,
+            forwardId: String? = null,
+            triggerHaptic: Boolean = false,
+        ): Result<Unit> = runCatching {
             val intent = Intent(context, TunnelForegroundService::class.java).setAction(action)
             if (forwardId != null) {
                 intent.putExtra(EXTRA_FORWARD_ID, forwardId)
+            }
+            if (triggerHaptic) {
+                intent.putExtra(EXTRA_TRIGGER_HAPTIC, true)
             }
             if (action == ACTION_DISCONNECT || action == ACTION_DISCONNECT_ALL) {
                 context.startService(intent)
