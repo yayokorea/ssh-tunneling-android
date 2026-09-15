@@ -1,3 +1,4 @@
 # AGENTS.md
 
-- Do not run Gradle commands in this workspace. The local Java setup causes Gradle to fail with `java: Too many levels of symbolic links`.
+- Do not run Gradle locally. Use GitHub Actions for builds and checks.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and release rules.
