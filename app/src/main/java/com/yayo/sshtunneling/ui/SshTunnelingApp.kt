@@ -3,6 +3,7 @@ package com.yayo.sshtunneling.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,18 +32,17 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddCircle
+import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Upload
@@ -59,6 +60,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -79,6 +81,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -86,13 +89,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -114,6 +114,9 @@ import com.yayo.sshtunneling.model.TunnelConnectionState
 import com.yayo.sshtunneling.model.TunnelPhase
 import com.yayo.sshtunneling.model.WidgetSlots
 import com.yayo.sshtunneling.update.AppUpdateInfo
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
@@ -128,12 +131,31 @@ fun SshTunnelingApp(
     val uriHandler = LocalUriHandler.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val activityEntries = remember { mutableStateListOf<TunnelActivityEntry>() }
+    val lastLoggedStatuses = remember { mutableMapOf<String, ForwardStatus>() }
     var showAppInfo by rememberSaveable { mutableStateOf(false) }
-    var selectedSection by rememberSaveable { mutableStateOf(AppSection.HOME) }
+    var currentScreen by rememberSaveable { mutableStateOf(AppScreen.HOME) }
     var pendingImportJson by remember { mutableStateOf<String?>(null) }
     var pendingForwardAfterNotificationPermission by remember { mutableStateOf<String?>(null) }
     var pendingForwardAfterLocalNetworkPermission by remember { mutableStateOf<String?>(null) }
     var notificationPermissionHandled by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.statuses) {
+        uiState.statuses.forEach { (forwardId, status) ->
+            if (lastLoggedStatuses[forwardId] != status) {
+                lastLoggedStatuses[forwardId] = status
+                activityEntries.add(
+                    index = 0,
+                    element = TunnelActivityEntry(
+                        timeLabel = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
+                        forwardId = forwardId,
+                        status = status,
+                    ),
+                )
+            }
+        }
+        while (activityEntries.size > 50) activityEntries.removeAt(activityEntries.lastIndex)
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val forwardId = pendingForwardAfterNotificationPermission
@@ -213,26 +235,43 @@ fun SshTunnelingApp(
         }
     }
 
+    val navigateBack: () -> Unit = {
+        currentScreen = when (currentScreen) {
+            AppScreen.HOST_EDIT,
+            AppScreen.LOCAL_EDIT,
+            AppScreen.ADB_CONNECT,
+            AppScreen.ADB_PAIR -> AppScreen.HOSTS
+            AppScreen.WIDGETS -> AppScreen.SETTINGS
+            AppScreen.ACTIVITY -> AppScreen.HOME
+            else -> currentScreen
+        }
+    }
+    BackHandler(enabled = !currentScreen.isRoot, onBack = navigateBack)
+
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    if (!currentScreen.isRoot) {
+                        IconButton(onClick = navigateBack) {
+                            Icon(Icons.Rounded.ArrowBack, contentDescription = "뒤로가기")
+                        }
+                    }
+                },
                 title = {
                     Column {
-                        Text(selectedSection.label, style = MaterialTheme.typography.titleLarge)
+                        Text(currentScreen.label, style = MaterialTheme.typography.titleLarge)
                         Text(
-                            selectedSection.subtitle,
+                            currentScreen.subtitle,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
                 actions = {
-                    if (uiState.statuses.values.any {
-                            it.state == TunnelConnectionState.CONNECTED || it.state == TunnelConnectionState.CONNECTING
-                        }
-                    ) {
-                        IconButton(onClick = viewModel::disconnectAll) {
-                            Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "모든 터널 연결 해제")
+                    if (currentScreen != AppScreen.ACTIVITY) {
+                        TextButton(onClick = { currentScreen = AppScreen.ACTIVITY }) {
+                            Text("로그")
                         }
                     }
                 },
@@ -241,10 +280,20 @@ fun SshTunnelingApp(
         bottomBar = {
             if (!isExpanded) {
                 AppNavigation(
-                    selectedSection = selectedSection,
-                    onSectionSelected = { selectedSection = it },
+                    selectedSection = currentScreen.rootSection,
+                    onSectionSelected = { currentScreen = it.screen },
                     expanded = false,
                 )
+            }
+        },
+        floatingActionButton = {
+            if (!isExpanded && currentScreen.isRoot && currentScreen != AppScreen.ADD) {
+                FloatingActionButton(
+                    onClick = { currentScreen = AppScreen.ADD },
+                    modifier = Modifier.size(52.dp),
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "새 터널 만들기")
+                }
             }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
@@ -257,35 +306,35 @@ fun SshTunnelingApp(
             if (isExpanded) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     AppNavigation(
-                        selectedSection = selectedSection,
-                        onSectionSelected = { selectedSection = it },
+                        selectedSection = currentScreen.rootSection,
+                        onSectionSelected = { currentScreen = it.screen },
                         expanded = true,
                     )
                     SectionContent(
-                        section = selectedSection,
+                        screen = currentScreen,
                         uiState = uiState,
                         viewModel = viewModel,
+                        activityEntries = activityEntries,
                         onToggleForward = onToggleForward,
                         onExport = { exportLauncher.launch("ssh-tunneling-settings.json") },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*")) },
                         onCheckUpdate = { viewModel.checkForAppUpdate(force = true) },
                         onShowAppInfo = { showAppInfo = true },
-                        onSectionSelected = { selectedSection = it },
-                        isExpanded = true,
+                        onNavigate = { currentScreen = it },
                     )
                 }
             } else {
                 SectionContent(
-                    section = selectedSection,
+                    screen = currentScreen,
                     uiState = uiState,
                     viewModel = viewModel,
+                    activityEntries = activityEntries,
                     onToggleForward = onToggleForward,
                     onExport = { exportLauncher.launch("ssh-tunneling-settings.json") },
                     onImport = { importLauncher.launch(arrayOf("application/json", "text/*")) },
                     onCheckUpdate = { viewModel.checkForAppUpdate(force = true) },
                     onShowAppInfo = { showAppInfo = true },
-                    onSectionSelected = { selectedSection = it },
-                    isExpanded = false,
+                    onNavigate = { currentScreen = it },
                 )
             }
         }
@@ -371,11 +420,55 @@ fun SshTunnelingApp(
 private const val LOCAL_NETWORK_PERMISSION_API = 37
 private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
 
-private enum class AppSection(val label: String, val subtitle: String) {
-    HOME("터널", "실시간 연결 상태"),
-    HOSTS("호스트", "서버 · 인증 · 터널 구성"),
-    ADD("추가", "새 연결 유형 선택"),
+private data class TunnelActivityEntry(
+    val timeLabel: String,
+    val forwardId: String,
+    val status: ForwardStatus,
+)
+
+private enum class AppSection(val label: String) {
+    HOME("터널"),
+    HOSTS("호스트"),
+    ADD("추가"),
+    SETTINGS("설정");
+
+    val screen: AppScreen
+        get() = when (this) {
+            HOME -> AppScreen.HOME
+            HOSTS -> AppScreen.HOSTS
+            ADD -> AppScreen.ADD
+            SETTINGS -> AppScreen.SETTINGS
+        }
+}
+
+private enum class AppScreen(val label: String, val subtitle: String) {
+    HOME("터널", "실행 상태 중심 홈"),
+    HOSTS("SSH 호스트", "서버와 인증 정보"),
+    ADD("터널 추가", "종류를 선택하세요"),
     SETTINGS("설정", "위젯 · 백업 · 업데이트"),
+    HOST_EDIT("SSH 호스트 편집", "접속 정보와 서버 신원"),
+    LOCAL_EDIT("일반 터널", "SSH 로컬 포워딩 설정"),
+    ADB_CONNECT("ADB Connect", "무선 디버깅 reverse tunnel"),
+    ADB_PAIR("ADB Pair", "페어링 작업 흐름"),
+    WIDGETS("위젯 슬롯", "터널별 빠른 연결/해제"),
+    ACTIVITY("실행 로그", "최근 상태 전환");
+
+    val isRoot: Boolean
+        get() = this == HOME || this == HOSTS || this == ADD || this == SETTINGS
+
+    val rootSection: AppSection
+        get() = when (this) {
+            HOME, ACTIVITY -> AppSection.HOME
+            HOSTS, HOST_EDIT, LOCAL_EDIT, ADB_CONNECT, ADB_PAIR -> AppSection.HOSTS
+            ADD -> AppSection.ADD
+            SETTINGS, WIDGETS -> AppSection.SETTINGS
+        }
+}
+
+private fun ForwardMode.editorScreen(): AppScreen = when (this) {
+    ForwardMode.LOCAL -> AppScreen.LOCAL_EDIT
+    ForwardMode.ADB_CONNECT -> AppScreen.ADB_CONNECT
+    ForwardMode.ADB_PAIRING -> AppScreen.ADB_PAIR
 }
 
 @Composable
@@ -402,7 +495,7 @@ private fun AppNavigation(
             }
         }
     } else {
-        androidx.compose.material3.NavigationBar {
+        androidx.compose.material3.NavigationBar(modifier = Modifier.height(64.dp), tonalElevation = 0.dp) {
             items.forEach { (section, icon) ->
                 NavigationBarItem(
                     selected = selectedSection == section,
@@ -417,74 +510,277 @@ private fun AppNavigation(
 
 @Composable
 private fun SectionContent(
-    section: AppSection,
+    screen: AppScreen,
     uiState: TunnelUiState,
     viewModel: TunnelViewModel,
+    activityEntries: List<TunnelActivityEntry>,
     onToggleForward: (String) -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
     onCheckUpdate: () -> Unit,
     onShowAppInfo: () -> Unit,
-    onSectionSelected: (AppSection) -> Unit,
-    isExpanded: Boolean,
+    onNavigate: (AppScreen) -> Unit,
 ) {
-    val useTwoPane = isExpanded && LocalConfiguration.current.screenWidthDp >= 840
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 14.dp),
+        contentPadding = PaddingValues(vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        when (section) {
-            AppSection.HOME -> item {
+        when (screen) {
+            AppScreen.HOME -> item {
                 OverviewPane(
                     uiState = uiState,
                     onToggleForward = onToggleForward,
                     onManageForward = { forwardId ->
-                        uiState.appData.forwards.firstOrNull { it.id == forwardId }?.let { viewModel.selectHost(it.hostId) }
-                        viewModel.selectForward(forwardId)
-                        onSectionSelected(AppSection.HOSTS)
+                        uiState.appData.forwards.firstOrNull { it.id == forwardId }?.let { forward ->
+                            viewModel.selectHost(forward.hostId)
+                            viewModel.selectForward(forwardId)
+                            onNavigate(forward.mode.editorScreen())
+                        }
                     },
-                    onAdd = { onSectionSelected(AppSection.ADD) },
+                    onAdd = { onNavigate(AppScreen.ADD) },
                     onDisconnectAll = viewModel::disconnectAll,
                 )
             }
-            AppSection.HOSTS -> item {
-                EditorPane(
+            AppScreen.HOSTS -> item {
+                HostsPane(
                     uiState = uiState,
-                    viewModel = viewModel,
-                    onToggleForward = onToggleForward,
-                    expanded = useTwoPane,
+                    onAddHost = {
+                        viewModel.addHost()
+                        onNavigate(AppScreen.HOST_EDIT)
+                    },
+                    onOpenHost = { hostId ->
+                        viewModel.selectHost(hostId)
+                        onNavigate(AppScreen.HOST_EDIT)
+                    },
                 )
             }
-            AppSection.ADD -> item {
+            AppScreen.ADD -> item {
                 AddTunnelPane(
                     host = uiState.appData.hosts.firstOrNull { it.id == uiState.selectedHostId },
                     onSelectHost = viewModel::selectHost,
                     hosts = uiState.appData.hosts,
                     onAdd = { mode ->
                         viewModel.addForward(mode)
-                        onSectionSelected(AppSection.HOSTS)
+                        onNavigate(mode.editorScreen())
                     },
                 )
             }
-            AppSection.SETTINGS -> item {
+            AppScreen.SETTINGS -> item {
                 SettingsPane(
                     uiState = uiState,
                     onExport = onExport,
                     onImport = onImport,
                     onCheckUpdate = onCheckUpdate,
                     onShowAppInfo = onShowAppInfo,
+                    onManageWidgets = { onNavigate(AppScreen.WIDGETS) },
+                )
+            }
+            AppScreen.WIDGETS -> item {
+                WidgetSlotsPane(
+                    uiState = uiState,
                     onManageForward = { forwardId ->
                         uiState.appData.forwards.firstOrNull { it.id == forwardId }?.let { forward ->
                             viewModel.selectHost(forward.hostId)
                             viewModel.selectForward(forwardId)
-                            onSectionSelected(AppSection.HOSTS)
+                            onNavigate(forward.mode.editorScreen())
                         }
                     },
                 )
             }
+            AppScreen.HOST_EDIT -> item {
+                val selectedHost = uiState.appData.hosts.firstOrNull { it.id == uiState.selectedHostId }
+                if (selectedHost != null) {
+                    HostEditorCard(
+                        host = selectedHost,
+                        requiresHostKey = uiState.appData.forwards.any {
+                            it.hostId == selectedHost.id && it.mode != ForwardMode.LOCAL
+                        },
+                        verification = uiState.hostKeyVerification,
+                        viewModel = viewModel,
+                        onDone = { onNavigate(AppScreen.HOSTS) },
+                        onDelete = {
+                            viewModel.requestDeleteSelectedHost()
+                            onNavigate(AppScreen.HOSTS)
+                        },
+                    )
+                }
+            }
+            AppScreen.LOCAL_EDIT -> item {
+                val forward = uiState.appData.forwards.firstOrNull { it.id == uiState.selectedForwardId }
+                val host = uiState.appData.hosts.firstOrNull { it.id == forward?.hostId }
+                if (forward != null && host != null) {
+                    ForwardEditorCard(
+                        host = host,
+                        forward = forward,
+                        status = uiState.statuses[forward.id],
+                        viewModel = viewModel,
+                        onToggleForward = onToggleForward,
+                        onDone = { onNavigate(AppScreen.HOME) },
+                        onDelete = {
+                            viewModel.requestDeleteSelectedForward()
+                            onNavigate(AppScreen.HOME)
+                        },
+                    )
+                }
+            }
+            AppScreen.ADB_CONNECT,
+            AppScreen.ADB_PAIR -> item {
+                val forward = uiState.appData.forwards.firstOrNull { it.id == uiState.selectedForwardId }
+                val host = uiState.appData.hosts.firstOrNull { it.id == forward?.hostId }
+                if (forward != null && host != null) {
+                    AdbDetailPane(
+                        host = host,
+                        forward = forward,
+                        status = uiState.statuses[forward.id],
+                        onToggle = { onToggleForward(forward.id) },
+                        onAssignWidget = { slot -> viewModel.assignWidgetSlot(slot) },
+                        onDelete = {
+                            viewModel.requestDeleteSelectedForward()
+                            onNavigate(AppScreen.HOME)
+                        },
+                    )
+                }
+            }
+            AppScreen.ACTIVITY -> item {
+                ActivityPane(uiState = uiState, entries = activityEntries)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HostsPane(
+    uiState: TunnelUiState,
+    onAddHost: () -> Unit,
+    onOpenHost: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("SSH 호스트", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "자격 증명과 서버 신원을 관리합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Button(onClick = onAddHost) {
+                Icon(Icons.Rounded.Add, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text("호스트")
+            }
+        }
+
+        uiState.appData.hosts.forEach { host ->
+            val hostForwards = uiState.appData.forwards.count { it.hostId == host.id }
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { onOpenHost(host.id) },
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(host.name.ifBlank { "이름 없는 호스트" }, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "${host.host.ifBlank { "주소 미입력" }}:${host.port} · ${host.username.ifBlank { "사용자 미입력" }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "${if (host.hostKeyFingerprint.isNullOrBlank()) "Fingerprint 미승인" else "Fingerprint 승인됨"} · Keep-alive ${host.keepAliveSeconds}초 · 터널 ${hostForwards}개",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(Icons.Rounded.OpenInNew, contentDescription = "${host.name} 편집")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivityPane(
+    uiState: TunnelUiState,
+    entries: List<TunnelActivityEntry>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("실행 로그 / 상태 이력", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "현재 세션의 최근 상태를 터널별로 확인합니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (entries.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Text(
+                    "아직 기록된 실행 상태가 없습니다.",
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        } else {
+            entries.forEach { entry ->
+                val forward = uiState.appData.forwards.firstOrNull { it.id == entry.forwardId }
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(entry.timeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "${forward?.name ?: "삭제된 터널"} · ${statusLabel(entry.status)}",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            entry.status.message ?: forward?.pathSummary().orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WidgetSlotsPane(
+    uiState: TunnelUiState,
+    onManageForward: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("터널 편집 화면에서 각 슬롯의 배정을 변경할 수 있습니다.", style = MaterialTheme.typography.bodyMedium)
+        repeat(WidgetSlots.COUNT) { slot ->
+            val forward = uiState.appData.forwards.firstOrNull { it.widgetSlot == slot }
+            val host = uiState.appData.hosts.firstOrNull { it.id == forward?.hostId }
+            WidgetSlotRow(
+                slot = slot,
+                title = forward?.name ?: "미지정",
+                subtitle = if (forward == null) {
+                    "배정된 터널이 없습니다"
+                } else {
+                    "${host?.name.orEmpty()} · ${forward.pathSummary()}"
+                },
+                onClick = forward?.let { { onManageForward(it.id) } },
+            )
         }
     }
 }
@@ -496,36 +792,41 @@ private fun SettingsPane(
     onImport: () -> Unit,
     onCheckUpdate: () -> Unit,
     onShowAppInfo: () -> Unit,
-    onManageForward: (String) -> Unit,
+    onManageWidgets: () -> Unit,
 ) {
     val context = LocalContext.current
     val packageInfo = remember(context) { context.packageManager.getPackageInfo(context.packageName, 0) }
     val versionName = packageInfo.versionName ?: "unknown"
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        SectionHeading("홈 화면 위젯", "6개 슬롯에서 자주 쓰는 터널을 바로 전환합니다")
+        SectionHeading("연결", "실행 중인 터널은 백그라운드에서 유지됩니다")
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                repeat(WidgetSlots.COUNT) { slot ->
-                    val forward = uiState.appData.forwards.firstOrNull { it.widgetSlot == slot }
-                    val host = uiState.appData.hosts.firstOrNull { it.id == forward?.hostId }
-                    WidgetSlotRow(
-                        slot = slot,
-                        title = forward?.name ?: "미지정",
-                        subtitle = if (forward == null) "터널 편집에서 이 슬롯을 배정하세요" else "${host?.name.orEmpty()} · ${forward.pathSummary()}",
-                        onClick = forward?.let { { onManageForward(it.id) } },
-                    )
+            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Foreground service", style = MaterialTheme.typography.titleMedium)
+                    Text("실행 중 터널을 백그라운드에서 유지", style = MaterialTheme.typography.bodySmall)
+                }
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Text("자동", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+
+        SectionHeading("홈 화면 위젯", "6개 슬롯에서 자주 쓰는 터널을 바로 전환합니다")
+        Surface(shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("6개 슬롯 배정", style = MaterialTheme.typography.titleMedium)
+                Text("${uiState.appData.forwards.count { it.widgetSlot != null }}개 슬롯 사용 중", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = onManageWidgets, modifier = Modifier.fillMaxWidth()) {
+                    Text("슬롯 관리")
                 }
             }
         }
 
         SectionHeading("백업 및 복원", "서버 구성은 옮기고 비밀 정보는 기기에 남깁니다")
-        Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 1.dp) {
+        Surface(shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -573,61 +874,29 @@ private fun OverviewPane(
 ) {
     val connectedCount = uiState.statuses.values.count { it.state == TunnelConnectionState.CONNECTED }
     val connectingCount = uiState.statuses.values.count { it.state == TunnelConnectionState.CONNECTING }
-    val errorCount = uiState.statuses.values.count { it.state == TunnelConnectionState.ERROR }
+    val pendingCount = uiState.appData.forwards.count { forward ->
+        uiState.statuses[forward.id]?.state != TunnelConnectionState.CONNECTED
+    }
 
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(30.dp))
-                .background(
-                    Brush.linearGradient(
-                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary),
-                    )
-                )
-                .padding(24.dp),
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(
-                        modifier = Modifier.size(52.dp).background(Color.White.copy(alpha = 0.16f), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Rounded.Router, contentDescription = null, tint = Color.White)
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("네트워크 콘솔", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
-                        Text(
-                            if (connectedCount > 0) "${connectedCount}개 경로가 열려 있습니다" else "모든 경로가 대기 중입니다",
-                            color = Color.White,
-                            style = MaterialTheme.typography.headlineSmall,
-                        )
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HeroMetric("연결", connectedCount, Icons.Rounded.CheckCircle)
-                    HeroMetric("진행", connectingCount, Icons.Rounded.Sync)
-                    HeroMetric("오류", errorCount, Icons.Rounded.ErrorOutline)
-                }
-                if (connectedCount + connectingCount > 0) {
-                    OutlinedButton(
-                        onClick = onDisconnectAll,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    ) {
-                        Icon(Icons.Rounded.PowerSettingsNew, contentDescription = null, tint = Color.White)
-                        Spacer(Modifier.size(8.dp))
-                        Text("모든 세션 종료", color = Color.White)
-                    }
-                }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("현재 상태", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${connectedCount}개 연결됨 · ${pendingCount}개 대기 중",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-        }
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-            SectionHeading("터널 상태", "호스트별 실시간 세션")
-            TextButton(onClick = onAdd, modifier = Modifier.heightIn(min = 48.dp)) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-                Spacer(Modifier.size(4.dp))
-                Text("새 터널")
+            OutlinedButton(
+                onClick = onDisconnectAll,
+                enabled = connectedCount + connectingCount > 0,
+            ) {
+                Text("모두 끄기")
             }
         }
 
@@ -638,7 +907,11 @@ private fun OverviewPane(
                 val forwards = uiState.appData.forwards.filter { it.hostId == host.id }
                 if (forwards.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(host.name.ifBlank { "이름 없는 호스트" }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            host.name.ifBlank { "이름 없는 호스트" }.uppercase(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         forwards.forEach { forward ->
                             TunnelStatusRow(
                                 forward = forward,
@@ -648,31 +921,6 @@ private fun OverviewPane(
                             )
                         }
                     }
-                }
-            }
-        }
-
-        SectionHeading("실행 상태", "아이콘과 문구로 연결 단계를 구분합니다")
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-        ) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                uiState.appData.forwards.mapNotNull { forward ->
-                    uiState.statuses[forward.id]?.takeIf { it.state != TunnelConnectionState.IDLE }?.let { forward to it }
-                }.ifEmpty {
-                    emptyList()
-                }.forEach { (forward, status) ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        StatusGlyph(status)
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(forward.name, style = MaterialTheme.typography.titleSmall)
-                            Text(status.message ?: statusLabel(status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                if (uiState.statuses.values.none { it.state != TunnelConnectionState.IDLE }) {
-                    Text("진행 중인 작업이 없습니다. 연결을 시작하면 단계별 상태가 여기에 표시됩니다.", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -686,16 +934,16 @@ private fun AddTunnelPane(
     onSelectHost: (String) -> Unit,
     onAdd: (ForwardMode) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("어떤 경로를 열까요?", style = MaterialTheme.typography.headlineLarge)
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("새 터널 만들기", style = MaterialTheme.typography.titleLarge)
             Text(
-                "목적에 맞는 유형을 고르면 필요한 설정만 보여드립니다.",
-                style = MaterialTheme.typography.bodyLarge,
+                "터널 종류에 따라 설정 흐름이 달라집니다.",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        SectionHeading("SSH 호스트", "새 터널이 사용할 서버")
+        SectionHeading("SSH 호스트", "새 터널이 사용할 서버를 먼저 선택하세요")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(hosts, key = { it.id }) { item ->
                 FilterChip(
@@ -749,24 +997,24 @@ private fun TunnelTypeChoice(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 156.dp)
+            .heightIn(min = 104.dp)
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.6f else 0.3f),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Row(modifier = Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(
-                modifier = Modifier.size(52.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp)),
+                modifier = Modifier.size(44.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
             }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
-                Text(title, style = MaterialTheme.typography.titleLarge)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text(path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -781,20 +1029,6 @@ private fun SectionHeading(title: String, subtitle: String) {
 }
 
 @Composable
-private fun HeroMetric(label: String, count: Int, icon: ImageVector) {
-    Row(
-        modifier = Modifier
-            .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-        Text("$label $count", style = MaterialTheme.typography.labelLarge, color = Color.White)
-    }
-}
-
-@Composable
 private fun TunnelStatusRow(
     forward: PortForwardRule,
     status: ForwardStatus?,
@@ -803,7 +1037,7 @@ private fun TunnelStatusRow(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
@@ -812,11 +1046,14 @@ private fun TunnelStatusRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StatusGlyph(status)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(forward.name.ifBlank { "이름 없는 터널" }, style = MaterialTheme.typography.titleMedium)
                 Text(forward.pathSummary(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(statusLabel(status), style = MaterialTheme.typography.labelMedium, color = statusColor(status))
+                Text(
+                    status?.message ?: statusLabel(status),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = statusColor(status),
+                )
             }
             Switch(
                 checked = status?.state == TunnelConnectionState.CONNECTED || status?.state == TunnelConnectionState.CONNECTING,
@@ -872,7 +1109,7 @@ private fun EmptyConsole(onAdd: () -> Unit) {
 private fun ConsoleActionRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(12.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -894,7 +1131,7 @@ private fun WidgetSlotRow(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
     ) {
         Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -913,161 +1150,19 @@ private fun WidgetSlotRow(
 }
 
 @Composable
-private fun EditorPane(
-    uiState: TunnelUiState,
-    viewModel: TunnelViewModel,
-    onToggleForward: (String) -> Unit,
-    expanded: Boolean = false,
-    modifier: Modifier = Modifier,
-) {
-    val selectedHost = uiState.appData.hosts.firstOrNull { it.id == uiState.selectedHostId }
-    val hostForwards = uiState.appData.forwards.filter { it.hostId == selectedHost?.id }
-    val selectedForward = hostForwards.firstOrNull { it.id == uiState.selectedForwardId } ?: hostForwards.firstOrNull()
-
-    if (expanded) {
-        Row(
-            modifier = modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(modifier = Modifier.weight(0.8f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                HostSelectorCard(
-                    uiState = uiState,
-                    onSelectHost = viewModel::selectHost,
-                    onAddHost = viewModel::addHost,
-                    onDeleteHost = viewModel::requestDeleteSelectedHost,
-                )
-                selectedHost?.let {
-                    ForwardListCard(
-                        forwards = hostForwards,
-                        statuses = uiState.statuses,
-                        selectedForwardId = selectedForward?.id,
-                        onSelectForward = viewModel::selectForward,
-                        onAddForward = { viewModel.addForward() },
-                        onToggleForward = onToggleForward,
-                        onDeleteForward = viewModel::requestDeleteSelectedForward,
-                    )
-                }
-            }
-            selectedHost?.let { host ->
-                Column(modifier = Modifier.weight(1.2f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    HostEditorCard(
-                        host = host,
-                        requiresHostKey = hostForwards.any { it.mode != ForwardMode.LOCAL },
-                        verification = uiState.hostKeyVerification,
-                        viewModel = viewModel,
-                    )
-                selectedForward?.let { forward ->
-                    ForwardEditorCard(
-                        host = host,
-                        forward = forward,
-                        status = uiState.statuses[forward.id],
-                        viewModel = viewModel,
-                        onToggleForward = onToggleForward,
-                    )
-                }
-            }
-            }
-        }
-    } else {
-        Column(
-            modifier = modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            HostSelectorCard(
-                uiState = uiState,
-                onSelectHost = viewModel::selectHost,
-                onAddHost = viewModel::addHost,
-                onDeleteHost = viewModel::requestDeleteSelectedHost,
-            )
-
-            selectedHost?.let { host ->
-                ForwardListCard(
-                    forwards = hostForwards,
-                    statuses = uiState.statuses,
-                    selectedForwardId = selectedForward?.id,
-                    onSelectForward = viewModel::selectForward,
-                    onAddForward = { viewModel.addForward() },
-                    onToggleForward = onToggleForward,
-                    onDeleteForward = viewModel::requestDeleteSelectedForward,
-                )
-                selectedForward?.let { forward ->
-                    ForwardEditorCard(
-                        host = host,
-                        forward = forward,
-                        status = uiState.statuses[forward.id],
-                        viewModel = viewModel,
-                        onToggleForward = onToggleForward,
-                    )
-                }
-                HostEditorCard(
-                    host = host,
-                    requiresHostKey = hostForwards.any { it.mode != ForwardMode.LOCAL },
-                    verification = uiState.hostKeyVerification,
-                    viewModel = viewModel,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HostSelectorCard(
-    uiState: TunnelUiState,
-    onSelectHost: (String) -> Unit,
-    onAddHost: () -> Unit,
-    onDeleteHost: () -> Unit,
-) {
-    Card(shape = RoundedCornerShape(28.dp)) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("호스트", style = MaterialTheme.typography.titleLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onAddHost) {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                        Spacer(Modifier.size(6.dp))
-                        Text("추가")
-                    }
-                    TextButton(onClick = onDeleteHost, enabled = uiState.appData.hosts.size > 1) {
-                        Icon(Icons.Rounded.Delete, contentDescription = null)
-                        Spacer(Modifier.size(6.dp))
-                        Text("삭제")
-                    }
-                }
-            }
-
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(uiState.appData.hosts, key = { it.id }) { host ->
-                    FilterChip(
-                        selected = host.id == uiState.selectedHostId,
-                        onClick = { onSelectHost(host.id) },
-                        label = { Text(host.name.ifBlank { "이름 없는 호스트" }) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun HostEditorCard(
     host: HostProfile,
     requiresHostKey: Boolean,
     verification: HostKeyVerificationState,
     viewModel: TunnelViewModel,
+    onDone: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     var privateKeyExpanded by rememberSaveable(host.id, host.authMode.name) { mutableStateOf(false) }
     var sshPortInput by rememberSaveable(host.id) { mutableStateOf(host.port.toString()) }
     var keepAliveInput by rememberSaveable(host.id) { mutableStateOf(host.keepAliveSeconds.toString()) }
 
-    Card(shape = RoundedCornerShape(28.dp)) {
+    Card(shape = RoundedCornerShape(12.dp)) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1158,141 +1253,155 @@ private fun HostEditorCard(
                 FilterChip(
                     selected = host.authMode == AuthMode.PRIVATE_KEY,
                     onClick = { viewModel.setSelectedHostAuthMode(AuthMode.PRIVATE_KEY) },
-                    label = { Text("개인 키") },
+                    label = { Text("PEM 키") },
                     leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                )
+                FilterChip(
+                    selected = host.authMode == AuthMode.NONE,
+                    onClick = { viewModel.setSelectedHostAuthMode(AuthMode.NONE) },
+                    label = { Text("없음") },
                 )
             }
 
-            if (host.authMode == AuthMode.PASSWORD) {
-                TunnelField(
+            when (host.authMode) {
+                AuthMode.PASSWORD -> TunnelField(
                     value = host.password,
                     label = "비밀번호",
-                    onValueChange = { value ->
-                        viewModel.updateSelectedHost { it.copy(password = value) }
-                    },
+                    onValueChange = { value -> viewModel.updateSelectedHost { it.copy(password = value) } },
                     isSecret = true,
                     required = true,
                 )
-            } else {
-                if (privateKeyExpanded) {
-                    TunnelField(
-                        value = host.privateKey,
-                        label = "개인 키 (PEM)",
-                        onValueChange = { value -> viewModel.updateSelectedHost { it.copy(privateKey = value) } },
-                        singleLine = false,
-                        maxLinesWhenExpanded = 8,
-                        required = true,
-                    )
-                } else {
-                    Card(
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                AuthMode.PRIVATE_KEY -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (privateKeyExpanded) {
+                        TunnelField(
+                            value = host.privateKey,
+                            label = "개인 키 (PEM)",
+                            onValueChange = { value -> viewModel.updateSelectedHost { it.copy(privateKey = value) } },
+                            singleLine = false,
+                            maxLinesWhenExpanded = 8,
+                            required = true,
+                        )
+                    } else {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                         ) {
-                            Text("개인 키 (PEM)", style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                text = host.privateKey.previewLabel(),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text("개인 키 (PEM)", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    text = host.privateKey.previewLabel(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = { privateKeyExpanded = !privateKeyExpanded }) {
+                            Text(if (privateKeyExpanded) "접기" else "펼치기")
                         }
                     }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = { privateKeyExpanded = !privateKeyExpanded }) {
-                        Text(if (privateKeyExpanded) "접기" else "펼치기")
-                    }
-                }
+                AuthMode.NONE -> Text(
+                    "서버가 인증 없는 SSH 연결을 허용하는 경우에만 사용할 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             TunnelNumberField(keepAliveInput, "연결 유지 간격(초)", maxValue = 86_400) { value ->
                 keepAliveInput = value
                 viewModel.updateSelectedHost { current -> current.copy(keepAliveSeconds = value.toIntOrNull() ?: 0) }
             }
+            onDone?.let {
+                Button(onClick = it, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("저장")
+                }
+            }
+            onDelete?.let {
+                TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) {
+                    Text("호스트 삭제", color = MaterialTheme.colorScheme.error)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ForwardListCard(
-    forwards: List<PortForwardRule>,
-    statuses: Map<String, ForwardStatus>,
-    selectedForwardId: String?,
-    onSelectForward: (String) -> Unit,
-    onAddForward: () -> Unit,
-    onToggleForward: (String) -> Unit,
-    onDeleteForward: () -> Unit,
+private fun AdbDetailPane(
+    host: HostProfile,
+    forward: PortForwardRule,
+    status: ForwardStatus?,
+    onToggle: () -> Unit,
+    onAssignWidget: (Int?) -> Unit,
+    onDelete: () -> Unit,
 ) {
-    Card(shape = RoundedCornerShape(28.dp)) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+    val isActive = status?.state == TunnelConnectionState.CONNECTED ||
+        status?.state == TunnelConnectionState.CONNECTING
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("포트 포워딩", style = MaterialTheme.typography.titleLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onAddForward) {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                        Spacer(Modifier.size(6.dp))
-                        Text("추가")
-                    }
-                    TextButton(onClick = onDeleteForward, enabled = forwards.size > 1) {
-                        Icon(Icons.Rounded.Delete, contentDescription = null)
-                        Spacer(Modifier.size(6.dp))
-                        Text("삭제")
-                    }
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(forward.name, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${host.name} · 서버 포트 ${forward.reverseBindPort}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(4.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Column(modifier = Modifier.padding(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 12.dp)) {
+                Text("현재 상태: ${statusLabel(status)}", style = MaterialTheme.typography.titleMedium)
+                status?.message?.takeIf { it.isNotBlank() }?.let { message ->
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
-            forwards.forEach { forward ->
-                val status = statuses[forward.id]
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (forward.id == selectedForwardId) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelectForward(forward.id) },
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth(0.78f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(forward.name.ifBlank { "이름 없는 포워딩" }, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "${forward.pathSummary()} · ${statusLabel(status)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        FilledTonalButton(onClick = { onToggleForward(forward.id) }) {
-                            Icon(Icons.Rounded.PowerSettingsNew, contentDescription = null)
-                            Spacer(Modifier.size(6.dp))
-                            Text(actionLabel(status))
-                        }
-                    }
+        }
+        AdbOperationsPanel(forward = forward, status = status)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("위젯 슬롯", style = MaterialTheme.typography.titleMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    FilterChip(
+                        selected = forward.widgetSlot == null,
+                        onClick = { onAssignWidget(null) },
+                        label = { Text("미지정") },
+                    )
+                }
+                items((0 until WidgetSlots.COUNT).toList()) { slot ->
+                    FilterChip(
+                        selected = forward.widgetSlot == slot,
+                        onClick = { onAssignWidget(slot) },
+                        label = { Text("${slot + 1}") },
+                    )
                 }
             }
+        }
+        Button(onClick = onToggle, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(
+                when {
+                    isActive -> "터널 끄기"
+                    forward.mode == ForwardMode.ADB_PAIRING -> "시작 / 다시 검색"
+                    else -> "터널 켜기"
+                }
+            )
+        }
+        TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+            Text("터널 삭제", color = MaterialTheme.colorScheme.error)
         }
     }
 }
@@ -1304,12 +1413,13 @@ private fun ForwardEditorCard(
     status: ForwardStatus?,
     viewModel: TunnelViewModel,
     onToggleForward: (String) -> Unit,
+    onDone: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     var localPortInput by rememberSaveable(forward.id, "local") { mutableStateOf(forward.localPort.toString()) }
     var remotePortInput by rememberSaveable(forward.id, "remote") { mutableStateOf(forward.remotePort.toString()) }
-    var reversePortInput by rememberSaveable(forward.id, "reverse") { mutableStateOf(forward.reverseBindPort.toString()) }
 
-    Card(shape = RoundedCornerShape(28.dp)) {
+    Card(shape = RoundedCornerShape(12.dp)) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1322,33 +1432,14 @@ private fun ForwardEditorCard(
             )
             HorizontalDivider()
 
-            Text("터널 종류", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = forward.mode == ForwardMode.LOCAL,
-                    onClick = { viewModel.updateSelectedForward { it.copy(mode = ForwardMode.LOCAL) } },
-                    label = { Text("일반 SSH") },
-                )
-                FilterChip(
-                    selected = forward.mode == ForwardMode.ADB_CONNECT,
-                    onClick = {
-                        viewModel.updateSelectedForward {
-                            it.copy(mode = ForwardMode.ADB_CONNECT, reverseBindPort = 5555)
-                        }
-                    },
-                    label = { Text("무선 디버깅") },
-                )
-                FilterChip(
-                    selected = forward.mode == ForwardMode.ADB_PAIRING,
-                    onClick = {
-                        viewModel.updateSelectedForward {
-                            it.copy(mode = ForwardMode.ADB_PAIRING, reverseBindPort = 5556)
-                        }
-                    },
-                    label = { Text("페어링") },
-                )
-            }
-
+            OutlinedTextField(
+                value = host.name,
+                onValueChange = {},
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("SSH 호스트") },
+                readOnly = true,
+                singleLine = true,
+            )
             TunnelField(
                 value = forward.name,
                 label = "포워딩 이름",
@@ -1357,53 +1448,21 @@ private fun ForwardEditorCard(
                 },
                 required = true,
             )
-            if (forward.mode == ForwardMode.LOCAL) {
-                TunnelNumberField(localPortInput, "내 기기 포트") { value ->
-                    localPortInput = value
-                    viewModel.updateSelectedForward { current -> current.copy(localPort = value.toIntOrNull() ?: 0) }
-                }
-                TunnelField(
-                    value = forward.remoteHost,
-                    label = "목적지 주소",
-                    onValueChange = { value ->
-                        viewModel.updateSelectedForward { it.copy(remoteHost = value.trim()) }
-                    },
-                    required = true,
-                )
-                TunnelNumberField(remotePortInput, "목적지 포트") { value ->
-                    remotePortInput = value
-                    viewModel.updateSelectedForward { current -> current.copy(remotePort = value.toIntOrNull() ?: 0) }
-                }
-            } else {
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            if (forward.mode == ForwardMode.ADB_CONNECT) "무선 디버깅 자동 감지" else "페어링 주소 자동 감지",
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Text(
-                            if (forward.mode == ForwardMode.ADB_CONNECT) {
-                                "연결 후 SSH 서버에서 adb connect 127.0.0.1:${forward.reverseBindPort}를 실행하세요."
-                            } else {
-                                "Android에서 ‘페어링 코드로 기기 페어링’ 화면을 연 채, SSH 서버에서 adb pair 127.0.0.1:${forward.reverseBindPort}를 실행하세요."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-                TunnelNumberField(reversePortInput, "SSH 서버의 로컬 포트") { value ->
-                    reversePortInput = value
-                    viewModel.updateSelectedForward { current ->
-                        current.copy(reverseBindHost = "127.0.0.1", reverseBindPort = value.toIntOrNull() ?: 0)
-                    }
-                }
-                AdbOperationsPanel(forward = forward, status = status)
+            TunnelNumberField(localPortInput, "Android 로컬 포트") { value ->
+                localPortInput = value
+                viewModel.updateSelectedForward { current -> current.copy(localPort = value.toIntOrNull() ?: 0) }
+            }
+            TunnelField(
+                value = forward.remoteHost,
+                label = "목적지 주소",
+                onValueChange = { value ->
+                    viewModel.updateSelectedForward { it.copy(remoteHost = value.trim()) }
+                },
+                required = true,
+            )
+            TunnelNumberField(remotePortInput, "목적지 포트") { value ->
+                remotePortInput = value
+                viewModel.updateSelectedForward { current -> current.copy(remotePort = value.toIntOrNull() ?: 0) }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1443,13 +1502,29 @@ private fun ForwardEditorCard(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onToggleForward(forward.id) }, modifier = Modifier.fillMaxWidth()) {
+                onDone?.let {
+                    Button(onClick = it, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text("저장")
+                    }
+                }
+                OutlinedButton(onClick = { onToggleForward(forward.id) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.Link, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text(actionLabel(status))
+                    Text(
+                        if (status?.state != TunnelConnectionState.CONNECTED) {
+                            "저장 후 연결"
+                        } else {
+                            actionLabel(status)
+                        }
+                    )
                 }
-                OutlinedButton(onClick = { viewModel.assignWidgetSlot(null) }, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { viewModel.assignWidgetSlot(null) }, modifier = Modifier.fillMaxWidth()) {
                     Text("위젯 해제")
+                }
+                onDelete?.let {
+                    TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) {
+                        Text("터널 삭제", color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }
@@ -1484,7 +1559,7 @@ private fun AdbOperationsPanel(forward: PortForwardRule, status: ForwardStatus?)
     }
 
     Surface(
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
     ) {
         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1643,9 +1718,9 @@ private fun actionLabel(status: ForwardStatus?): String = when (status?.state) {
 }
 
 private fun PortForwardRule.pathSummary(): String = when (mode) {
-    ForwardMode.LOCAL -> "$localPort → $remoteHost:$remotePort"
-    ForwardMode.ADB_CONNECT -> "무선 디버깅 → 127.0.0.1:$reverseBindPort"
-    ForwardMode.ADB_PAIRING -> "페어링 → 127.0.0.1:$reverseBindPort"
+    ForwardMode.LOCAL -> "LOCAL · :$localPort → $remoteHost:$remotePort"
+    ForwardMode.ADB_CONNECT -> "REVERSE · 서버 :$reverseBindPort"
+    ForwardMode.ADB_PAIRING -> "REVERSE · 서버 :$reverseBindPort"
 }
 
 @Composable

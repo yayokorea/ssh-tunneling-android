@@ -1,61 +1,61 @@
 package com.yayo.sshtunneling.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 private val LightColors = lightColorScheme(
-    primary = ConsoleBlue,
+    primary = Color(0xFF111827),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD8E6FF),
-    onPrimaryContainer = Color(0xFF0B2E61),
-    secondary = SignalCyan,
+    primaryContainer = Color(0xFFE5E7EB),
+    onPrimaryContainer = Color(0xFF111827),
+    secondary = Color(0xFF374151),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFB7EBF0),
-    onSecondaryContainer = Color(0xFF002F34),
+    secondaryContainer = Color(0xFFE5E7EB),
+    onSecondaryContainer = Color(0xFF111827),
     tertiary = PulseAmber,
-    tertiaryContainer = Color(0xFFFFE48A),
-    surface = ConsolePaper,
-    surfaceVariant = Color(0xFFE8EDF4),
-    onSurface = ConsoleInk,
-    onSurfaceVariant = Color(0xFF46515E),
-    outline = Color(0xFF74808E),
-    outlineVariant = Color(0xFFC7D0DB),
+    tertiaryContainer = Color(0xFFFFEDD5),
+    surface = Color.White,
+    surfaceVariant = Color(0xFFF3F4F6),
+    onSurface = Color(0xFF111827),
+    onSurfaceVariant = Color(0xFF6B7280),
+    outline = Color(0xFF9CA3AF),
+    outlineVariant = Color(0xFFD1D5DB),
     error = Color(0xFFB3261E),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = ConsoleBlueDark,
-    onPrimary = Color(0xFF062C62),
-    primaryContainer = Color(0xFF21477F),
-    onPrimaryContainer = Color(0xFFD8E6FF),
-    secondary = SignalCyanDark,
-    onSecondary = Color(0xFF00363C),
-    secondaryContainer = Color(0xFF00515A),
-    onSecondaryContainer = Color(0xFFB7EBF0),
+    primary = Color(0xFFF9FAFB),
+    onPrimary = Color(0xFF111827),
+    primaryContainer = Color(0xFF374151),
+    onPrimaryContainer = Color(0xFFF9FAFB),
+    secondary = Color(0xFFD1D5DB),
+    onSecondary = Color(0xFF111827),
+    secondaryContainer = Color(0xFF374151),
+    onSecondaryContainer = Color(0xFFF9FAFB),
     tertiary = PulseAmberDark,
     tertiaryContainer = Color(0xFF594400),
-    surface = ConsoleNight,
-    surfaceVariant = Color(0xFF202832),
-    onSurface = Color(0xFFE5EAF1),
-    onSurfaceVariant = Color(0xFFBAC4D0),
-    outline = Color(0xFF8994A2),
-    outlineVariant = Color(0xFF394451),
+    surface = Color(0xFF111827),
+    surfaceVariant = Color(0xFF1F2937),
+    onSurface = Color(0xFFF9FAFB),
+    onSurfaceVariant = Color(0xFF9CA3AF),
+    outline = Color(0xFF6B7280),
+    outlineVariant = Color(0xFF374151),
     error = Color(0xFFFFB4AB),
 )
 
 private val ConsoleShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(30.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(12.dp),
+    extraLarge = RoundedCornerShape(12.dp),
 )
 
 @Composable
