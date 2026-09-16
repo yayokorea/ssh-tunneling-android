@@ -266,10 +266,18 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun addForward() {
+    fun addForward(mode: ForwardMode = ForwardMode.LOCAL) {
         val hostId = editorState.value.selectedHostId ?: return
         val nextIndex = editorState.value.appData.forwards.count { it.hostId == hostId } + 1
-        val forward = createForward(hostId, nextIndex)
+        val forward = createForward(hostId, nextIndex).copy(
+            mode = mode,
+            name = when (mode) {
+                ForwardMode.LOCAL -> "SSH 터널 $nextIndex"
+                ForwardMode.ADB_CONNECT -> "ADB Connect"
+                ForwardMode.ADB_PAIRING -> "ADB Pair"
+            },
+            reverseBindPort = mode.defaultReversePort,
+        )
         persist(
             editorState.value.copy(
                 appData = editorState.value.appData.copy(
@@ -317,6 +325,11 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
 
     fun assignWidgetSlot(slot: Int?) {
         val forwardId = editorState.value.selectedForwardId ?: return
+        assignWidgetSlot(forwardId, slot)
+    }
+
+    fun assignWidgetSlot(forwardId: String, slot: Int?) {
+        if (editorState.value.appData.forwards.none { it.id == forwardId }) return
         val updatedForwards = editorState.value.appData.forwards.map { forward ->
             when {
                 forward.id == forwardId -> forward.copy(widgetSlot = slot)
@@ -326,6 +339,10 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         persist(editorState.value.copy(appData = editorState.value.appData.copy(forwards = updatedForwards)))
+    }
+
+    fun disconnectAll() {
+        TunnelForegroundService.start(getApplication(), TunnelForegroundService.ACTION_DISCONNECT_ALL)
     }
 
     fun toggleForward(forwardId: String) {
