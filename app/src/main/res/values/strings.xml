@@ -8,6 +8,14 @@
     <string name="status_service_start_failed">Could not start tunnel service.</string>
     <string name="status_unknown_error">Unknown SSH tunnel error</string>
     <string name="status_connection_lost">SSH tunnel connection was lost.</string>
+    <string name="status_adb_api_unsupported">Android 11 이상에서만 무선 디버깅 터널을 사용할 수 있습니다.</string>
+    <string name="status_adb_discovering">%1$s: 무선 디버깅 서비스를 검색하는 중입니다.</string>
+    <string name="status_adb_probing">%1$s: 발견된 Android endpoint에 연결할 수 있는지 확인하는 중입니다.</string>
+    <string name="status_adb_not_found">무선 디버깅 endpoint를 찾지 못했습니다. Wi-Fi와 무선 디버깅을 확인하세요.</string>
+    <string name="status_pairing_not_found">페어링 endpoint를 찾지 못했습니다. Android의 페어링 화면을 여세요.</string>
+    <string name="status_pairing_waiting">페어링 화면이 닫혔습니다. 다시 열면 포워딩을 재개합니다.</string>
+    <string name="status_adb_waiting_for_network">Wi-Fi 또는 무선 디버깅 endpoint를 기다리는 중입니다.</string>
+    <string name="status_connected_adb">%1$s: 서버 127.0.0.1:%2$d에서 ADB reverse forwarding 중</string>
     <string name="export_success">설정을 내보냈습니다.</string>
     <string name="export_write_failed">설정 파일을 쓸 수 없습니다.</string>
     <string name="import_success">설정을 불러왔습니다.</string>

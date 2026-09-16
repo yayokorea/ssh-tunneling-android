@@ -5,6 +5,26 @@ enum class AuthMode {
     PRIVATE_KEY,
 }
 
+enum class ForwardMode(val defaultReversePort: Int) {
+    LOCAL(0),
+    ADB_CONNECT(5555),
+    ADB_PAIRING(5556),
+}
+
+enum class TunnelPhase {
+    IDLE,
+    WAITING_FOR_PERMISSION,
+    WAITING_FOR_WIFI,
+    DISCOVERING_ADB,
+    PROBING_ADB,
+    CONNECTING_SSH,
+    BINDING_FORWARD,
+    CONNECTED,
+    WAITING_FOR_PAIRING,
+    RECONNECTING,
+    ERROR,
+}
+
 enum class TunnelConnectionState {
     IDLE,
     CONNECTING,
@@ -15,6 +35,7 @@ enum class TunnelConnectionState {
 data class ForwardStatus(
     val forwardId: String,
     val state: TunnelConnectionState = TunnelConnectionState.IDLE,
+    val phase: TunnelPhase = TunnelPhase.IDLE,
     val message: String? = null,
 )
 
@@ -28,6 +49,7 @@ data class HostProfile(
     val password: String = "",
     val privateKey: String = "",
     val keepAliveSeconds: Int = 30,
+    val hostKeyFingerprint: String? = null,
 ) {
     fun isComplete(): Boolean {
         val hasAuth = when (authMode) {
@@ -52,12 +74,22 @@ data class PortForwardRule(
     val remoteHost: String = "127.0.0.1",
     val remotePort: Int = 80,
     val widgetSlot: Int? = null,
+    val mode: ForwardMode = ForwardMode.LOCAL,
+    val reverseBindHost: String = "127.0.0.1",
+    val reverseBindPort: Int = mode.defaultReversePort,
 ) {
     fun isComplete(): Boolean {
-        return name.isNotBlank() &&
+        val localForwardIsValid = localPort in 1..65535 &&
             remoteHost.isNotBlank() &&
-            localPort > 0 &&
-            remotePort > 0
+            remotePort in 1..65535
+        val reverseForwardIsValid = reverseBindHost == LOOPBACK_HOST &&
+            reverseBindPort in 1..65535
+        return name.isNotBlank() && localForwardIsValid &&
+            (mode == ForwardMode.LOCAL || reverseForwardIsValid)
+    }
+
+    companion object {
+        const val LOOPBACK_HOST = "127.0.0.1"
     }
 }
 

@@ -1,56 +1,132 @@
 package com.yayo.sshtunneling.service
 
+import android.util.Base64
+import com.jcraft.jsch.HostKey
+import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
+import com.jcraft.jsch.UserInfo
 import com.yayo.sshtunneling.model.AuthMode
+import com.yayo.sshtunneling.model.ForwardMode
 import com.yayo.sshtunneling.model.HostProfile
 import com.yayo.sshtunneling.model.PortForwardRule
+import java.security.MessageDigest
 
+/** Owns one SSH session and the forwarding rules attached to it. */
 class SshTunnelManager(
     private val host: HostProfile,
     private val forward: PortForwardRule,
 ) {
     private var session: Session? = null
+    private var reverseForwardActive = false
 
     @Synchronized
     fun connect(): Int {
+        val connectedSession = connectSession()
+        return runCatching {
+            when (forward.mode) {
+                ForwardMode.LOCAL -> addLocalForward(connectedSession)
+                ForwardMode.ADB_CONNECT,
+                ForwardMode.ADB_PAIRING -> error("ADB endpoint is required before reverse forwarding")
+            }
+        }.onFailure {
+            connectedSession.disconnect()
+            session = null
+        }.getOrThrow()
+    }
+
+    @Synchronized
+    fun connectSession(): Session {
+        session?.takeIf { it.isConnected }?.let { return it }
         val jsch = JSch()
         if (host.authMode == AuthMode.PRIVATE_KEY) {
-            jsch.addIdentity(
-                host.id,
-                host.privateKey.toByteArray(Charsets.UTF_8),
-                null,
-                null,
-            )
+            jsch.addIdentity(host.id, host.privateKey.toByteArray(Charsets.UTF_8), null, null)
+        }
+
+        val expectedFingerprint = host.hostKeyFingerprint?.trim().orEmpty()
+        if (expectedFingerprint.isNotBlank()) {
+            jsch.hostKeyRepository = PinnedHostKeyRepository(expectedFingerprint)
+        } else if (forward.mode != ForwardMode.LOCAL) {
+            throw IllegalStateException("ADB 터널은 SSH 서버 fingerprint 확인이 필요합니다.")
         }
 
         val createdSession = jsch.getSession(host.username, host.host, host.port).apply {
             if (this@SshTunnelManager.host.authMode == AuthMode.PASSWORD) {
                 setPassword(this@SshTunnelManager.host.password)
             }
-            setConfig("StrictHostKeyChecking", "no")
+            // Legacy local tunnels remain compatible; ADB tunnels always pin a key.
+            setConfig("StrictHostKeyChecking", if (expectedFingerprint.isBlank()) "no" else "yes")
             serverAliveInterval = this@SshTunnelManager.host.keepAliveSeconds * 1000
+            serverAliveCountMax = 3
             timeout = 15_000
-            connect(15_000)
         }
 
         return runCatching {
-            createdSession.setPortForwardingL(
-                forward.localPort,
-                forward.remoteHost,
-                forward.remotePort,
-            )
-        }.onSuccess {
+            createdSession.connect(15_000)
             session = createdSession
-        }.onFailure {
-            createdSession.disconnect()
-        }.getOrThrow()
+            createdSession
+        }.onFailure { createdSession.disconnect() }.getOrThrow()
+    }
+
+    @Synchronized
+    fun addLocalForward(connectedSession: Session = requireSession()): Int =
+        connectedSession.setPortForwardingL(forward.localPort, forward.remoteHost, forward.remotePort)
+
+    @Synchronized
+    fun addReverseForward(address: String, port: Int): Int {
+        require(forward.mode != ForwardMode.LOCAL) { "Local forwards do not have an ADB endpoint" }
+        require(forward.reverseBindHost == PortForwardRule.LOOPBACK_HOST) {
+            "ADB reverse forwarding must bind to 127.0.0.1"
+        }
+        require(port in 1..65535) { "ADB endpoint port is out of range" }
+        val boundPort = requireSession().setPortForwardingR(
+            forward.reverseBindHost,
+            forward.reverseBindPort,
+            address,
+            port,
+        )
+        reverseForwardActive = true
+        return boundPort
+    }
+
+    @Synchronized
+    fun replaceReverseTarget(address: String, port: Int): Int {
+        removeReverseForward()
+        return addReverseForward(address, port)
+    }
+
+    @Synchronized
+    fun removeForward() {
+        val current = session ?: return
+        if (forward.mode == ForwardMode.LOCAL) {
+            runCatching { current.delPortForwarding(forward.localPort) }
+        } else {
+            removeReverseForward()
+        }
+    }
+
+    @Synchronized
+    fun removeReverseForward() {
+        val current = session ?: return
+        if (reverseForwardActive) {
+            runCatching { current.delPortForwarding(forward.reverseBindPort) }
+            reverseForwardActive = false
+        }
     }
 
     @Synchronized
     fun disconnect() {
-        session?.disconnect()
+        val current = session
         session = null
+        reverseForwardActive = false
+        if (current != null) {
+            if (forward.mode == ForwardMode.LOCAL) {
+                runCatching { current.delPortForwarding(forward.localPort) }
+            } else {
+                runCatching { current.delPortForwarding(forward.reverseBindPort) }
+            }
+            current.disconnect()
+        }
     }
 
     @Synchronized
@@ -64,5 +140,40 @@ class SshTunnelManager(
             currentSession.sendKeepAliveMsg()
             currentSession.isConnected
         }.getOrDefault(false)
+    }
+
+    private fun requireSession(): Session = session?.takeIf { it.isConnected }
+        ?: error("SSH session is not connected")
+}
+
+class PinnedHostKeyRepository(
+    expectedFingerprint: String,
+    private val onObserved: (String) -> Unit = {},
+) : HostKeyRepository {
+    private val expected = normalize(expectedFingerprint)
+
+    override fun check(host: String?, key: ByteArray): Int {
+        val observed = fingerprint(key)
+        onObserved(observed)
+        return if (normalize(observed) == expected) HostKeyRepository.OK else HostKeyRepository.CHANGED
+    }
+
+    override fun add(hostkey: HostKey?, ui: UserInfo?) = Unit
+    override fun remove(host: String?, type: String?) = Unit
+    override fun remove(host: String?, type: String?, key: ByteArray?) = Unit
+    override fun getKnownHostsRepositoryID(): String = "pinned SHA-256 fingerprint"
+    override fun getHostKey(): Array<HostKey> = emptyArray()
+    override fun getHostKey(host: String?, type: String?): Array<HostKey> = emptyArray()
+
+    companion object {
+        fun fingerprint(key: ByteArray): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(key)
+            val encoded = Base64.encodeToString(digest, Base64.NO_WRAP or Base64.NO_PADDING)
+            return "SHA256:$encoded"
+        }
+
+        private fun normalize(value: String): String = value.trim()
+            .removePrefix("SHA256:")
+            .trimEnd('=')
     }
 }
