@@ -30,6 +30,9 @@ jobs:
         with:
           packages: platform-tools
 
+      - name: Run JVM unit tests
+        run: ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest
+
       - name: Assemble debug APK
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
