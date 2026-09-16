@@ -33,6 +33,19 @@ class TunnelDataValidationTest {
     }
 
     @Test
+    fun hostCompletenessAllowsExplicitNoAuthentication() {
+        val hostWithoutCredentials = HostProfile(
+            id = "host-1",
+            name = "Server",
+            host = "example.com",
+            username = "user",
+            authMode = AuthMode.NONE,
+        )
+
+        assertTrue(hostWithoutCredentials.isComplete())
+    }
+
+    @Test
     fun requiresLoopbackForAdbReverseForward() {
         val forward = PortForwardRule(
             id = "forward-1",

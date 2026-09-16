@@ -3,6 +3,7 @@ package com.yayo.sshtunneling.model
 enum class AuthMode {
     PASSWORD,
     PRIVATE_KEY,
+    NONE,
 }
 
 enum class ForwardMode(val defaultReversePort: Int) {
@@ -55,6 +56,7 @@ data class HostProfile(
         val hasAuth = when (authMode) {
             AuthMode.PASSWORD -> password.isNotBlank()
             AuthMode.PRIVATE_KEY -> privateKey.isNotBlank()
+            AuthMode.NONE -> true
         }
 
         return name.isNotBlank() &&

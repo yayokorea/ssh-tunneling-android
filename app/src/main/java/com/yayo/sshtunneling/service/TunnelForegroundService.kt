@@ -211,6 +211,8 @@ class TunnelForegroundService : Service() {
                                 R.string.status_connected_adb,
                                 forward.name,
                                 forward.reverseBindPort,
+                                endpoint.primaryAddress?.hostAddress.orEmpty(),
+                                endpoint.port,
                             )
                         },
                     )
@@ -352,7 +354,13 @@ class TunnelForegroundService : Service() {
                             forwardId = forwardId,
                             state = TunnelConnectionState.CONNECTED,
                             phase = TunnelPhase.CONNECTED,
-                            message = getString(R.string.status_connected_adb, forward.name, forward.reverseBindPort),
+                            message = getString(
+                                R.string.status_connected_adb,
+                                forward.name,
+                                forward.reverseBindPort,
+                                endpoint.primaryAddress?.hostAddress.orEmpty(),
+                                endpoint.port,
+                            ),
                         )
                     )
                 }

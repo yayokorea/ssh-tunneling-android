@@ -2,5 +2,5 @@ package com.yayo.sshtunneling.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val TunnelSeed = Color(0xFF355CCA)
-val TunnelAccent = Color(0xFF2B8A6E)
+val PulseAmber = Color(0xFF765A00)
+val PulseAmberDark = Color(0xFFF2D36A)
