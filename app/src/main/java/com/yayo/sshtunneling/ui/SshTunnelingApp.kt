@@ -52,6 +52,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -312,7 +314,7 @@ private fun AppNavigation(
     if (expanded) {
         androidx.compose.material3.NavigationRail {
             items.forEach { (section, icon) ->
-                androidx.compose.material3.NavigationRailItem(
+                NavigationRailItem(
                     selected = selectedSection == section,
                     onClick = { onSectionSelected(section) },
                     icon = { Icon(icon, contentDescription = section.label) },
@@ -323,7 +325,7 @@ private fun AppNavigation(
     } else {
         androidx.compose.material3.NavigationBar {
             items.forEach { (section, icon) ->
-                androidx.compose.material3.NavigationBarItem(
+                NavigationBarItem(
                     selected = selectedSection == section,
                     onClick = { onSectionSelected(section) },
                     icon = { Icon(icon, contentDescription = section.label) },

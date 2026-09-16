@@ -79,14 +79,14 @@ class SshTunnelManager(
             "ADB reverse forwarding must bind to 127.0.0.1"
         }
         require(port in 1..65535) { "ADB endpoint port is out of range" }
-        val boundPort = requireSession().setPortForwardingR(
+        requireSession().setPortForwardingR(
             forward.reverseBindHost,
             forward.reverseBindPort,
             address,
             port,
         )
         reverseForwardActive = true
-        return boundPort
+        return forward.reverseBindPort
     }
 
     @Synchronized
@@ -99,7 +99,7 @@ class SshTunnelManager(
     fun removeForward() {
         val current = session ?: return
         if (forward.mode == ForwardMode.LOCAL) {
-            runCatching { current.delPortForwarding(forward.localPort) }
+            runCatching { current.delPortForwardingL(forward.localPort) }
         } else {
             removeReverseForward()
         }
@@ -109,7 +109,7 @@ class SshTunnelManager(
     fun removeReverseForward() {
         val current = session ?: return
         if (reverseForwardActive) {
-            runCatching { current.delPortForwarding(forward.reverseBindPort) }
+            runCatching { current.delPortForwardingR(forward.reverseBindPort) }
             reverseForwardActive = false
         }
     }
@@ -121,9 +121,9 @@ class SshTunnelManager(
         reverseForwardActive = false
         if (current != null) {
             if (forward.mode == ForwardMode.LOCAL) {
-                runCatching { current.delPortForwarding(forward.localPort) }
+                runCatching { current.delPortForwardingL(forward.localPort) }
             } else {
-                runCatching { current.delPortForwarding(forward.reverseBindPort) }
+                runCatching { current.delPortForwardingR(forward.reverseBindPort) }
             }
             current.disconnect()
         }
