@@ -227,7 +227,7 @@ class TunnelForegroundService : Service() {
                         forwardId = forwardId,
                         state = TunnelConnectionState.ERROR,
                         phase = TunnelPhase.ERROR,
-                        message = error.message ?: getString(R.string.status_unknown_error),
+                        message = error.userFacingMessage(),
                     )
                 )
                 stopIfIdle()
@@ -339,7 +339,7 @@ class TunnelForegroundService : Service() {
                                     forwardId = forwardId,
                                     state = TunnelConnectionState.ERROR,
                                     phase = TunnelPhase.ERROR,
-                                    message = it.message ?: getString(R.string.status_unknown_error),
+                                    message = it.userFacingMessage(),
                                 )
                             )
                         }
@@ -362,6 +362,20 @@ class TunnelForegroundService : Service() {
 
     private fun endpointKey(endpoint: com.yayo.sshtunneling.adb.AdbEndpoint): String =
         "${endpoint.instanceName}:${endpoint.primaryAddress?.hostAddress}:${endpoint.port}"
+
+    private fun Throwable.userFacingMessage(): String {
+        val detail = message.orEmpty()
+        return when {
+            detail.contains("HostKey has been changed", ignoreCase = true) ||
+                detail.contains("reject HostKey", ignoreCase = true) -> getString(R.string.status_host_key_changed)
+            detail.contains("Auth fail", ignoreCase = true) -> getString(R.string.status_auth_failed)
+            detail.contains("refused", ignoreCase = true) -> getString(R.string.status_connection_refused)
+            detail.contains("timeout", ignoreCase = true) -> getString(R.string.status_connection_timeout)
+            detail.contains("remote port forwarding failed", ignoreCase = true) ||
+                detail.contains("port forwarding failed", ignoreCase = true) -> getString(R.string.status_reverse_forward_failed)
+            else -> getString(R.string.status_unknown_error)
+        }
+    }
 
     private fun ForwardMode.toAdbServiceKind(): AdbServiceKind = when (this) {
         ForwardMode.ADB_CONNECT -> AdbServiceKind.CONNECT

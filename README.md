@@ -16,8 +16,9 @@ ADB 연결/페어링 터널은 현재 Wi-Fi에서 `_adb-tls-connect._tcp.` 또�
 SSH 서버 `127.0.0.1:5555` 또는 `127.0.0.1:5556`으로 reverse forwarding합니다.
 앱은 pairing code를 읽거나 저장하지 않습니다.
 
-ADB 터널을 사용하기 전에 SSH 호스트의 SHA-256 host key fingerprint를 확인하고
-호스트 프로필에 저장해야 합니다. ADB listener는 외부 인터페이스에 노출되지 않으며,
+ADB 터널을 처음 연결하면 앱이 SSH 서버의 SHA-256 host key fingerprint를 가져와
+확인 대화상자에 표시합니다. 서버 관리자에게 받은 값과 비교해 승인하면 이후부터
+앱이 자동으로 검증합니다. ADB listener는 외부 인터페이스에 노출되지 않으며,
 서버에서는 `GatewayPorts no`와 필요한 경우 `PermitListen 127.0.0.1:5555`/
 `PermitListen 127.0.0.1:5556` 정책을 사용하세요.
 

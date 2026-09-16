@@ -39,18 +39,22 @@ class TunnelPreferences(context: Context) {
 
     fun loadAppData(): TunnelAppData {
         val rawJson = securePrefs.getString(KEY_APP_DATA, null) ?: return TunnelAppData()
-        return runCatching { parseAppData(rawJson) }.getOrElse { TunnelAppData() }
+        return runCatching { parseAppData(rawJson, validate = false) }.getOrElse { TunnelAppData() }
     }
 
     fun saveAppData(data: TunnelAppData) {
         securePrefs.edit {
-            putString(KEY_APP_DATA, exportAppData(data, includeSecrets = true))
+            putString(KEY_APP_DATA, exportAppData(data, includeSecrets = true, validate = false))
         }
     }
 
     /** Export is secret-free by default. Internal encrypted persistence opts in explicitly. */
-    fun exportAppData(data: TunnelAppData, includeSecrets: Boolean = false): String {
-        TunnelDataValidation.requireValid(data)
+    fun exportAppData(
+        data: TunnelAppData,
+        includeSecrets: Boolean = false,
+        validate: Boolean = true,
+    ): String {
+        if (validate) TunnelDataValidation.requireValid(data)
         return JSONObject().apply {
             put(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
             put(KEY_SECRETS_INCLUDED, includeSecrets)
@@ -95,7 +99,7 @@ class TunnelPreferences(context: Context) {
         }.toString()
     }
 
-    fun parseAppData(rawJson: String): TunnelAppData {
+    fun parseAppData(rawJson: String, validate: Boolean = true): TunnelAppData {
         val root = JSONObject(rawJson)
         val schemaVersion = root.optInt(KEY_SCHEMA_VERSION, LEGACY_SCHEMA_VERSION)
         require(schemaVersion in LEGACY_SCHEMA_VERSION..CURRENT_SCHEMA_VERSION) {
@@ -103,7 +107,8 @@ class TunnelPreferences(context: Context) {
         }
         val hosts = root.optJSONArray(KEY_HOSTS)?.toHostProfiles().orEmpty()
         val forwards = root.optJSONArray(KEY_FORWARDS)?.toForwardRules().orEmpty()
-        return TunnelDataValidation.requireValid(TunnelAppData(hosts = hosts, forwards = forwards))
+        val data = TunnelAppData(hosts = hosts, forwards = forwards)
+        return if (validate) TunnelDataValidation.requireValid(data) else data
     }
 
     fun loadStatuses(): Map<String, ForwardStatus> {

@@ -12,6 +12,54 @@ import com.yayo.sshtunneling.model.HostProfile
 import com.yayo.sshtunneling.model.PortForwardRule
 import java.security.MessageDigest
 
+data class ObservedHostKey(
+    val endpoint: String,
+    val fingerprint: String,
+)
+
+/** Reads the SSH host key before credentials are offered to the server. */
+object SshHostKeyProbe {
+    fun probe(host: String, port: Int, timeoutMillis: Int = 15_000): ObservedHostKey {
+        require(host.isNotBlank()) { "SSH 서버 주소를 입력하세요." }
+        require(port in 1..65535) { "SSH 포트는 1~65535 사이여야 합니다." }
+
+        var observedFingerprint: String? = null
+        val jsch = JSch().apply {
+            hostKeyRepository = object : HostKeyRepository {
+                override fun check(host: String?, key: ByteArray): Int {
+                    observedFingerprint = PinnedHostKeyRepository.fingerprint(key)
+                    return HostKeyRepository.OK
+                }
+
+                override fun add(hostkey: HostKey?, ui: UserInfo?) = Unit
+                override fun remove(host: String?, type: String?) = Unit
+                override fun remove(host: String?, type: String?, key: ByteArray?) = Unit
+                override fun getKnownHostsRepositoryID(): String = "temporary host key probe"
+                override fun getHostKey(): Array<HostKey> = emptyArray()
+                override fun getHostKey(host: String?, type: String?): Array<HostKey> = emptyArray()
+            }
+        }
+        val session = jsch.getSession("host-key-probe", host, port).apply {
+            setConfig("StrictHostKeyChecking", "yes")
+            setConfig("PreferredAuthentications", "none")
+            timeout = timeoutMillis
+        }
+
+        try {
+            session.connect(timeoutMillis)
+        } catch (error: Exception) {
+            if (observedFingerprint == null) throw error
+        } finally {
+            session.disconnect()
+        }
+
+        return ObservedHostKey(
+            endpoint = "$host:$port",
+            fingerprint = checkNotNull(observedFingerprint) { "SSH 서버 키를 가져오지 못했습니다." },
+        )
+    }
+}
+
 /** Owns one SSH session and the forwarding rules attached to it. */
 class SshTunnelManager(
     private val host: HostProfile,

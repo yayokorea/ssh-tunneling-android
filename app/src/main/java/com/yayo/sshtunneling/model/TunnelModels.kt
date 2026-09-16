@@ -60,8 +60,8 @@ data class HostProfile(
         return name.isNotBlank() &&
             host.isNotBlank() &&
             username.isNotBlank() &&
-            port > 0 &&
-            keepAliveSeconds > 0 &&
+            port in 1..65535 &&
+            keepAliveSeconds in 1..86_400 &&
             hasAuth
     }
 }
@@ -79,9 +79,11 @@ data class PortForwardRule(
     val reverseBindPort: Int = mode.defaultReversePort,
 ) {
     fun isComplete(): Boolean {
-        val localForwardIsValid = localPort in 1..65535 &&
-            remoteHost.isNotBlank() &&
-            remotePort in 1..65535
+        val localForwardIsValid = mode != ForwardMode.LOCAL || (
+            localPort in 1..65535 &&
+                remoteHost.isNotBlank() &&
+                remotePort in 1..65535
+        )
         val reverseForwardIsValid = reverseBindHost == LOOPBACK_HOST &&
             reverseBindPort in 1..65535
         return name.isNotBlank() && localForwardIsValid &&

@@ -1,5 +1,6 @@
 package com.yayo.sshtunneling.model
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,6 +18,21 @@ class TunnelDataValidationTest {
     }
 
     @Test
+    fun hostCompletenessRejectsOutOfRangeNumbers() {
+        val completeHost = HostProfile(
+            id = "host-1",
+            name = "Server",
+            host = "example.com",
+            username = "user",
+            password = "secret",
+        )
+
+        assertTrue(completeHost.isComplete())
+        assertFalse(completeHost.copy(port = 65_536).isComplete())
+        assertFalse(completeHost.copy(keepAliveSeconds = 86_401).isComplete())
+    }
+
+    @Test
     fun requiresLoopbackForAdbReverseForward() {
         val forward = PortForwardRule(
             id = "forward-1",
@@ -27,6 +43,22 @@ class TunnelDataValidationTest {
         )
 
         assertTrue(TunnelDataValidation.errors(TunnelAppData(listOf(host), listOf(forward))).isNotEmpty())
+    }
+
+    @Test
+    fun adbForwardDoesNotRequireUnusedLocalForwardFields() {
+        val forward = PortForwardRule(
+            id = "forward-1",
+            hostId = host.id,
+            mode = ForwardMode.ADB_CONNECT,
+            localPort = 0,
+            remoteHost = "",
+            remotePort = 0,
+            reverseBindPort = 5555,
+        )
+
+        assertTrue(TunnelDataValidation.errors(TunnelAppData(listOf(host), listOf(forward))).isEmpty())
+        assertTrue(forward.isComplete())
     }
 
     @Test

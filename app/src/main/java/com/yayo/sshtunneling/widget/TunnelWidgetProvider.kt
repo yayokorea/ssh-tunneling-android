@@ -11,6 +11,7 @@ import com.yayo.sshtunneling.MainActivity
 import com.yayo.sshtunneling.R
 import com.yayo.sshtunneling.data.TunnelPreferences
 import com.yayo.sshtunneling.model.TunnelConnectionState
+import com.yayo.sshtunneling.model.ForwardMode
 import com.yayo.sshtunneling.model.WidgetSlots
 import com.yayo.sshtunneling.service.TunnelForegroundService
 import com.yayo.sshtunneling.service.TunnelRuntime
@@ -67,7 +68,16 @@ class TunnelWidgetProvider : AppWidgetProvider() {
                 } else {
                     views.setTextViewText(titleIds[slot], forward.name)
                     views.setInt(cellIds[slot], "setBackgroundResource", backgroundFor(status?.state))
-                    views.setOnClickPendingIntent(cellIds[slot], buildToggleIntent(context, forward.id, slot))
+                    val needsHostKeyConfirmation = forward.mode != ForwardMode.LOCAL &&
+                        host.hostKeyFingerprint.isNullOrBlank()
+                    views.setOnClickPendingIntent(
+                        cellIds[slot],
+                        if (needsHostKeyConfirmation) {
+                            buildOpenAppIntent(context, slot)
+                        } else {
+                            buildToggleIntent(context, forward.id, slot)
+                        },
+                    )
                 }
             }
 

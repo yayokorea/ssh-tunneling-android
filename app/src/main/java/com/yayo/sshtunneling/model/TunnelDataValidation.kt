@@ -16,9 +16,11 @@ object TunnelDataValidation {
             if (forward.id.isBlank()) add("forwards[$index].id is required")
             if (!forwardIds.add(forward.id)) add("duplicate forward id: ${forward.id}")
             if (forward.hostId !in hostIds) add("forwards[$index].host_id does not exist")
-            if (forward.localPort !in 1..65535) add("forwards[$index].local_port is out of range")
-            if (forward.remotePort !in 1..65535) add("forwards[$index].remote_port is out of range")
-            if (forward.mode != ForwardMode.LOCAL) {
+            if (forward.mode == ForwardMode.LOCAL) {
+                if (forward.localPort !in 1..65535) add("forwards[$index].local_port is out of range")
+                if (forward.remoteHost.isBlank()) add("forwards[$index].remote_host is required")
+                if (forward.remotePort !in 1..65535) add("forwards[$index].remote_port is out of range")
+            } else {
                 if (forward.reverseBindHost != PortForwardRule.LOOPBACK_HOST) {
                     add("forwards[$index].reverse_bind_host must be 127.0.0.1")
                 }
