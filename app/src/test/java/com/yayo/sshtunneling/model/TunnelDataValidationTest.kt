@@ -50,6 +50,7 @@ class TunnelDataValidationTest {
         val forward = PortForwardRule(
             id = "forward-1",
             hostId = host.id,
+            name = "ADB connect",
             mode = ForwardMode.ADB_CONNECT,
             localPort = 0,
             remoteHost = "",
