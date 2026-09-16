@@ -12,6 +12,14 @@ adb shell am force-stop "$package_name"
 adb shell am start -W -n "$package_name/$activity_name"
 sleep 5
 
+adb exec-out screencap -p > "$preview_dir/00-launch.png"
+adb shell uiautomator dump /sdcard/launch.xml > /dev/null
+launch_dump="$(adb shell cat /sdcard/launch.xml)"
+if [[ "$launch_dump" == *"업데이트 가능"* ]]; then
+    adb shell input keyevent BACK
+    sleep 1
+fi
+
 adb exec-out screencap -p > "$preview_dir/01-home.png"
 
 device_size="$(adb shell wm size | tr -d '\r' | sed -n 's/.*Physical size: //p')"
