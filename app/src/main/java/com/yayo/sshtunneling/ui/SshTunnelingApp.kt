@@ -598,7 +598,7 @@ private fun OverviewPane(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("네트워크 콘솔", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
                         Text(
-                            if (connectedCount > 0) "$connectedCount개 경로가 열려 있습니다" else "모든 경로가 대기 중입니다",
+                            if (connectedCount > 0) "${connectedCount}개 경로가 열려 있습니다" else "모든 경로가 대기 중입니다",
                             color = Color.White,
                             style = MaterialTheme.typography.headlineSmall,
                         )
