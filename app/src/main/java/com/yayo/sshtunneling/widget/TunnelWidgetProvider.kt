@@ -15,15 +15,35 @@ import com.yayo.sshtunneling.model.ForwardMode
 import com.yayo.sshtunneling.model.WidgetSlots
 import com.yayo.sshtunneling.service.TunnelForegroundService
 import com.yayo.sshtunneling.service.TunnelRuntime
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 
 class TunnelWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        appWidgetIds.forEach { appWidgetId ->
-            appWidgetManager.updateAppWidget(appWidgetId, buildRemoteViews(context))
+        val pendingResult = goAsync()
+        refreshScope.launch {
+            try {
+                runCatching { refreshNow(context.applicationContext) }
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 
     companion object {
+        private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val refreshRequests = Channel<Context>(Channel.CONFLATED)
+
+        init {
+            refreshScope.launch {
+                for (context in refreshRequests) {
+                    runCatching { refreshNow(context) }
+                }
+            }
+        }
         private val cellIds = intArrayOf(
             R.id.widget_slot_0,
             R.id.widget_slot_1,
@@ -43,11 +63,14 @@ class TunnelWidgetProvider : AppWidgetProvider() {
         )
 
         fun refreshAll(context: Context) {
+            refreshRequests.trySend(context.applicationContext)
+        }
+
+        private fun refreshNow(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             val component = ComponentName(context, TunnelWidgetProvider::class.java)
-            manager.getAppWidgetIds(component).forEach { appWidgetId ->
-                manager.updateAppWidget(appWidgetId, buildRemoteViews(context))
-            }
+            val ids = manager.getAppWidgetIds(component)
+            if (ids.isNotEmpty()) manager.updateAppWidget(ids, buildRemoteViews(context))
         }
 
         private fun buildRemoteViews(context: Context): RemoteViews {

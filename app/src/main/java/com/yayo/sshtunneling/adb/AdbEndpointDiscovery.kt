@@ -49,18 +49,20 @@ class AdbEndpointDiscovery(
     val snapshot: StateFlow<AdbDiscoverySnapshot> = _snapshot.asStateFlow()
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
-            updateNetworkAddresses(network)
-        }
+        override fun onAvailable(network: Network) = Unit
 
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
-            localAddresses[network] = linkProperties.linkAddresses.map { it.address }.toSet()
-            refreshSelfClassifications()
+            scope.launch(Dispatchers.Main.immediate) {
+                localAddresses[network] = linkProperties.linkAddresses.map { it.address }.toSet()
+                refreshSelfClassifications()
+            }
         }
 
         override fun onLost(network: Network) {
-            localAddresses.remove(network)
-            refreshSelfClassifications()
+            scope.launch(Dispatchers.Main.immediate) {
+                localAddresses.remove(network)
+                refreshSelfClassifications()
+            }
         }
     }
 
@@ -132,13 +134,6 @@ class AdbEndpointDiscovery(
             .build()
         connectivityManager.registerNetworkCallback(request, networkCallback)
         networkCallbackRegistered = true
-    }
-
-    private fun updateNetworkAddresses(network: Network) {
-        connectivityManager.getLinkProperties(network)?.let { properties ->
-            localAddresses[network] = properties.linkAddresses.map { it.address }.toSet()
-            refreshSelfClassifications()
-        }
     }
 
     private fun listenerFor(kind: AdbServiceKind) = object : NsdManager.DiscoveryListener {

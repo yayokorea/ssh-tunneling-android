@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Context.VIBRATOR_MANAGER_SERVICE
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
@@ -27,39 +29,72 @@ import com.yayo.sshtunneling.model.PortForwardRule
 import com.yayo.sshtunneling.model.TunnelConnectionState
 import com.yayo.sshtunneling.model.TunnelPhase
 import com.yayo.sshtunneling.widget.TunnelWidgetProvider
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class TunnelForegroundService : Service() {
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Service state and commands live on the main thread; blocking SSH work runs on IO.
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val tunnelManagers = mutableMapOf<String, SshTunnelManager>()
     private val connectJobs = mutableMapOf<String, Job>()
-    private val monitorJobs = mutableMapOf<String, Job>()
+    private val cleanupJobs = mutableMapOf<String, Job>()
     private val adbWatchJobs = mutableMapOf<String, Job>()
     private val activeAdbForwardIds = mutableSetOf<String>()
+    private val desiredForwardIds = mutableSetOf<String>()
+    private val networkChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private lateinit var adbDiscovery: AdbEndpointDiscovery
+    private lateinit var connectivityManager: ConnectivityManager
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) { networkChanges.tryEmit(Unit) }
+        override fun onLost(network: Network) { networkChanges.tryEmit(Unit) }
+    }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         TunnelRuntime.initialize(applicationContext)
+        desiredForwardIds += TunnelPreferences(applicationContext).loadDesiredForwardIds()
         adbDiscovery = AdbEndpointDiscovery(applicationContext, serviceScope)
+        connectivityManager = getSystemService(ConnectivityManager::class.java)
+        connectivityManager.registerDefaultNetworkCallback(networkCallback)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val triggerHaptic = intent?.getBooleanExtra(EXTRA_TRIGGER_HAPTIC, false) == true
         when (intent?.action) {
-            ACTION_CONNECT -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let { connectTunnel(it, triggerHaptic) }
-            ACTION_DISCONNECT -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let { disconnectTunnel(it, triggerHaptic = triggerHaptic) }
-            ACTION_TOGGLE -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let { toggleTunnel(it, triggerHaptic) }
+            ACTION_CONNECT -> {
+                startForeground(NOTIFICATION_ID, buildNotification())
+                intent.getStringExtra(EXTRA_FORWARD_ID)?.let { connectTunnel(it, triggerHaptic) }
+            }
+            ACTION_DISCONNECT -> intent.getStringExtra(EXTRA_FORWARD_ID)?.let { disconnectTunnel(it, triggerHaptic) }
+            ACTION_TOGGLE -> {
+                startForeground(NOTIFICATION_ID, buildNotification())
+                intent.getStringExtra(EXTRA_FORWARD_ID)?.let { toggleTunnel(it, triggerHaptic) }
+            }
             ACTION_DISCONNECT_ALL -> disconnectAllTunnels()
+            null -> {
+                if (desiredForwardIds.isEmpty()) stopSelf(startId)
+                else {
+                    startForeground(NOTIFICATION_ID, buildNotification())
+                    desiredForwardIds.toList().forEach { connectTunnel(it) }
+                }
+            }
         }
         return START_STICKY
     }
@@ -68,238 +103,190 @@ class TunnelForegroundService : Service() {
 
     override fun onDestroy() {
         connectJobs.values.forEach { it.cancel() }
-        monitorJobs.values.forEach { it.cancel() }
         adbWatchJobs.values.forEach { it.cancel() }
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
         adbDiscovery.close()
-        tunnelManagers.toMap().forEach { (forwardId, manager) ->
-            manager.disconnect()
-            updateStatus(
-                ForwardStatus(
-                    forwardId = forwardId,
-                    state = TunnelConnectionState.IDLE,
-                    message = getString(R.string.status_idle_item),
-                )
-            )
+        val managers = tunnelManagers.values.toList()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            managers.forEach { runCatching { it.disconnect() } }
         }
-        connectJobs.clear()
-        monitorJobs.clear()
-        adbWatchJobs.clear()
-        activeAdbForwardIds.clear()
-        tunnelManagers.clear()
+        TunnelRuntime.replace(applicationContext, TunnelRuntime.statuses.value.mapValues { (_, status) ->
+            if (status.state == TunnelConnectionState.CONNECTING || status.state == TunnelConnectionState.CONNECTED) {
+                status.copy(state = TunnelConnectionState.IDLE, phase = TunnelPhase.IDLE, message = null)
+            } else status
+        })
+        TunnelWidgetProvider.refreshAll(applicationContext)
         serviceScope.cancel()
         super.onDestroy()
     }
 
     private fun toggleTunnel(forwardId: String, triggerHaptic: Boolean = false) {
-        val state = TunnelRuntime.statuses.value[forwardId]?.state
-        if (state == TunnelConnectionState.CONNECTED || state == TunnelConnectionState.CONNECTING) {
-            disconnectTunnel(forwardId, triggerHaptic = triggerHaptic)
-        } else {
-            connectTunnel(forwardId, triggerHaptic)
-        }
+        if (forwardId in desiredForwardIds) disconnectTunnel(forwardId, triggerHaptic = triggerHaptic)
+        else connectTunnel(forwardId, triggerHaptic)
     }
 
     private fun connectTunnel(forwardId: String, triggerHaptic: Boolean = false) {
-        if (connectJobs[forwardId]?.isActive == true || tunnelManagers[forwardId]?.isConnected() == true) {
-            if (triggerHaptic) triggerHapticFeedback()
-            return
-        }
-
-        val data = TunnelPreferences(applicationContext).loadAppData()
-        val forward = data.forwards.firstOrNull { it.id == forwardId }
-        val host = data.hosts.firstOrNull { it.id == forward?.hostId }
-
-        if (forward == null || host == null || !host.isComplete() || !forward.isComplete()) {
-            updateStatus(
-                ForwardStatus(
-                    forwardId = forwardId,
-                    state = TunnelConnectionState.ERROR,
-                    message = getString(R.string.status_profile_incomplete),
-                )
-            )
-            stopIfIdle()
-            return
-        }
-
-        if (forward.mode != ForwardMode.LOCAL && Build.VERSION.SDK_INT < 30) {
-            updateStatus(
-                ForwardStatus(
-                    forwardId = forwardId,
-                    state = TunnelConnectionState.ERROR,
-                    phase = TunnelPhase.ERROR,
-                    message = getString(R.string.status_adb_api_unsupported),
-                )
-            )
-            return
-        }
-
-        startForeground(NOTIFICATION_ID, buildNotification())
         if (triggerHaptic) triggerHapticFeedback()
-        updateStatus(
-            ForwardStatus(
-                forwardId = forwardId,
-                state = TunnelConnectionState.CONNECTING,
-                phase = if (forward.mode == ForwardMode.LOCAL) TunnelPhase.CONNECTING_SSH else TunnelPhase.DISCOVERING_ADB,
-                message = if (forward.mode == ForwardMode.LOCAL) {
-                    getString(R.string.status_connecting_item, forward.name)
-                } else {
-                    getString(R.string.status_adb_discovering, forward.name)
-                },
-            )
-        )
-
-        if (forward.mode != ForwardMode.LOCAL) {
-            activeAdbForwardIds += forwardId
-            adbDiscovery.start()
-        }
-        connectJobs[forwardId] = serviceScope.launch {
-            val result = runCatching {
-                val manager = SshTunnelManager(host, forward)
-                val endpoint = if (forward.mode == ForwardMode.LOCAL) {
-                    null
-                } else {
-                    val kind = forward.mode.toAdbServiceKind()
-                    updateStatus(
-                        ForwardStatus(
-                            forwardId = forwardId,
-                            state = TunnelConnectionState.CONNECTING,
-                            phase = TunnelPhase.PROBING_ADB,
-                            message = getString(R.string.status_adb_probing, forward.name),
-                        )
-                    )
-                    adbDiscovery.snapshot.value.errorMessage?.let { error(it) }
-                    adbDiscovery.awaitEndpoint(kind)
-                        ?: error(getString(if (kind == AdbServiceKind.PAIRING) R.string.status_pairing_not_found else R.string.status_adb_not_found))
+        desiredForwardIds += forwardId
+        saveDesiredForwardIds()
+        if (connectJobs[forwardId]?.isActive == true) return
+        updateStatus(ForwardStatus(
+            forwardId = forwardId,
+            state = TunnelConnectionState.CONNECTING,
+            phase = TunnelPhase.CONNECTING_SSH,
+            message = getString(R.string.status_preparing_connection),
+        ))
+        val job = serviceScope.launch {
+            try {
+                cleanupJobs[forwardId]?.join()
+                val data = withContext(Dispatchers.IO) { TunnelPreferences(applicationContext).loadAppData() }
+                val forward = data.forwards.firstOrNull { it.id == forwardId }
+                val host = data.hosts.firstOrNull { it.id == forward?.hostId }
+                if (forward == null || host == null || !host.isComplete() || !forward.isComplete()) {
+                    throw PermanentTunnelException(getString(R.string.status_profile_incomplete))
                 }
-                val boundPort = if (endpoint == null) {
-                    manager.connect()
-                } else {
-                    updateStatus(
-                        ForwardStatus(
-                            forwardId = forwardId,
-                            state = TunnelConnectionState.CONNECTING,
-                            phase = TunnelPhase.CONNECTING_SSH,
-                            message = getString(R.string.status_connecting_item, forward.name),
-                        )
-                    )
-                    manager.connectSession()
-                    manager.addReverseForward(
-                        endpoint.primaryAddress?.hostAddress ?: error("ADB endpoint address is missing"),
-                        endpoint.port,
-                    )
+                if (forward.mode != ForwardMode.LOCAL && Build.VERSION.SDK_INT < 30) {
+                    throw PermanentTunnelException(getString(R.string.status_adb_api_unsupported))
                 }
-                tunnelManagers[forwardId] = manager
-                startMonitor(forwardId, manager, host.keepAliveSeconds)
-                if (endpoint != null) {
-                    startAdbWatcher(forwardId, forward, manager, endpoint)
+                if (forward.mode != ForwardMode.LOCAL) {
+                    activeAdbForwardIds += forwardId
+                    adbDiscovery.start()
+                    adbDiscovery.snapshot.value.errorMessage?.let { throw PermanentTunnelException(it) }
                 }
-                updateStatus(
-                    ForwardStatus(
-                        forwardId = forwardId,
-                        state = TunnelConnectionState.CONNECTED,
-                        phase = TunnelPhase.CONNECTED,
-                        message = if (endpoint == null) {
-                            getString(
-                                R.string.status_connected_item,
-                                forward.name,
-                                boundPort,
-                                forward.remoteHost,
-                                forward.remotePort,
+                var retryDelay = TunnelRetryPolicy.INITIAL_DELAY_MILLIS
+                while (isActive && forwardId in desiredForwardIds) {
+                    val manager = SshTunnelManager(host, forward)
+                    try {
+                        val endpoint = if (forward.mode == ForwardMode.LOCAL) null else {
+                            val kind = forward.mode.toAdbServiceKind()
+                            updateStatus(ForwardStatus(forwardId, TunnelConnectionState.CONNECTING,
+                                TunnelPhase.DISCOVERING_ADB, getString(R.string.status_adb_discovering, forward.name)))
+                            adbDiscovery.awaitEndpoint(kind) ?: throw IOException(
+                                getString(if (kind == AdbServiceKind.PAIRING) R.string.status_pairing_not_found else R.string.status_adb_not_found)
                             )
-                        } else {
-                            getString(
-                                R.string.status_connected_adb,
-                                forward.name,
-                                forward.reverseBindPort,
-                                endpoint.primaryAddress?.hostAddress.orEmpty(),
-                                endpoint.port,
-                            )
-                        },
-                    )
-                )
-                refreshNotification()
-            }
-            connectJobs.remove(forwardId)
-            activeAdbForwardIds.remove(forwardId)
-            result.onFailure { error ->
-                tunnelManagers.remove(forwardId)?.disconnect()
-                monitorJobs.remove(forwardId)?.cancel()
-                updateStatus(
-                    ForwardStatus(
-                        forwardId = forwardId,
-                        state = TunnelConnectionState.ERROR,
-                        phase = TunnelPhase.ERROR,
-                        message = error.userFacingMessage(),
-                    )
-                )
-                stopIfIdle()
+                        }
+                        updateStatus(ForwardStatus(forwardId, TunnelConnectionState.CONNECTING,
+                            TunnelPhase.CONNECTING_SSH, getString(R.string.status_connecting_item, forward.name)))
+                        val boundPort = withContext(Dispatchers.IO) {
+                            if (endpoint == null) manager.connect()
+                            else {
+                                manager.connectSession()
+                                manager.addReverseForward(
+                                    endpoint.primaryAddress?.hostAddress ?: error("ADB endpoint address is missing"),
+                                    endpoint.port,
+                                )
+                            }
+                        }
+                        tunnelManagers[forwardId] = manager
+                        if (endpoint != null) startAdbWatcher(forwardId, forward, manager, endpoint)
+                        updateStatus(ForwardStatus(
+                            forwardId = forwardId,
+                            state = TunnelConnectionState.CONNECTED,
+                            phase = TunnelPhase.CONNECTED,
+                            message = if (endpoint == null) getString(R.string.status_connected_item,
+                                forward.name, boundPort, forward.remoteHost, forward.remotePort)
+                            else getString(R.string.status_connected_adb, forward.name,
+                                forward.reverseBindPort, endpoint.primaryAddress?.hostAddress.orEmpty(), endpoint.port),
+                        ))
+                        refreshNotification()
+                        retryDelay = TunnelRetryPolicy.INITIAL_DELAY_MILLIS
+                        val intervalMillis = host.keepAliveSeconds.coerceAtLeast(MIN_MONITOR_INTERVAL_SECONDS) * 1_000L
+                        while (isActive && forwardId in desiredForwardIds) {
+                            delay(intervalMillis)
+                            if (!withContext(Dispatchers.IO) { manager.verifyConnected() }) {
+                                throw IOException(getString(R.string.status_connection_lost))
+                            }
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        if (failure.isPermanent()) {
+                            desiredForwardIds.remove(forwardId)
+                            saveDesiredForwardIds()
+                            updateStatus(ForwardStatus(forwardId, TunnelConnectionState.ERROR,
+                                TunnelPhase.ERROR, failure.userFacingMessage()))
+                            break
+                        }
+                        updateStatus(ForwardStatus(forwardId, TunnelConnectionState.CONNECTING,
+                            TunnelPhase.RECONNECTING, getString(R.string.status_reconnecting, retryDelay / 1_000)))
+                    } finally {
+                        adbWatchJobs.remove(forwardId)?.cancel()
+                        if (tunnelManagers[forwardId] === manager) tunnelManagers.remove(forwardId)
+                        withContext(NonCancellable + Dispatchers.IO) { manager.disconnect() }
+                    }
+                    if (forwardId in desiredForwardIds) {
+                        withTimeoutOrNull(retryDelay) { networkChanges.first() }
+                        retryDelay = TunnelRetryPolicy.nextDelayMillis(retryDelay)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                desiredForwardIds.remove(forwardId)
+                saveDesiredForwardIds()
+                updateStatus(ForwardStatus(forwardId, TunnelConnectionState.ERROR,
+                    TunnelPhase.ERROR, failure.userFacingMessage()))
+            } finally {
+                val ownsForward = currentCoroutineContext()[Job] === connectJobs[forwardId]
+                if (ownsForward) {
+                    connectJobs.remove(forwardId)
+                    activeAdbForwardIds.remove(forwardId)
+                }
+                if (activeAdbForwardIds.isEmpty()) adbDiscovery.stop()
+                if (ownsForward) stopIfIdle()
             }
         }
+        connectJobs[forwardId] = job
     }
 
-    private fun disconnectTunnel(
-        forwardId: String,
-        updateIdleState: Boolean = true,
-        triggerHaptic: Boolean = false,
-    ) {
+    private fun disconnectTunnel(forwardId: String, triggerHaptic: Boolean = false) {
         if (triggerHaptic) triggerHapticFeedback()
-        connectJobs.remove(forwardId)?.cancel()
-        monitorJobs.remove(forwardId)?.cancel()
+        desiredForwardIds.remove(forwardId)
+        saveDesiredForwardIds()
+        val oldJob = connectJobs.remove(forwardId)
+        oldJob?.cancel()
         adbWatchJobs.remove(forwardId)?.cancel()
         activeAdbForwardIds.remove(forwardId)
-        tunnelManagers.remove(forwardId)?.disconnect()
-        if (updateIdleState) {
-            updateStatus(
-                ForwardStatus(
-                    forwardId = forwardId,
-                    state = TunnelConnectionState.IDLE,
-                    phase = TunnelPhase.IDLE,
-                    message = getString(R.string.status_idle_item),
-                )
-            )
+        val orphanManager = if (oldJob == null) tunnelManagers.remove(forwardId) else null
+        if (oldJob != null || orphanManager != null) {
+            val cleanup = serviceScope.launch {
+                oldJob?.join()
+                if (orphanManager != null) withContext(Dispatchers.IO) { orphanManager.disconnect() }
+            }
+            cleanupJobs[forwardId] = cleanup
+            cleanup.invokeOnCompletion {
+                serviceScope.launch {
+                    if (cleanupJobs[forwardId] === cleanup) cleanupJobs.remove(forwardId)
+                    stopIfIdle()
+                }
+            }
         }
+        updateStatus(ForwardStatus(forwardId, TunnelConnectionState.IDLE,
+            TunnelPhase.IDLE, getString(R.string.status_idle_item)))
         stopIfIdle()
     }
 
     private fun disconnectAllTunnels() {
-        val forwardIds = (tunnelManagers.keys + connectJobs.keys + monitorJobs.keys).toSet()
-        forwardIds.forEach { forwardId ->
-            disconnectTunnel(forwardId)
-        }
+        (desiredForwardIds + connectJobs.keys + tunnelManagers.keys).toSet().forEach { disconnectTunnel(it) }
     }
 
-    private fun startMonitor(forwardId: String, manager: SshTunnelManager, keepAliveSeconds: Int) {
-        monitorJobs.remove(forwardId)?.cancel()
-        val intervalMillis = keepAliveSeconds.coerceAtLeast(MIN_MONITOR_INTERVAL_SECONDS) * 1_000L
-        monitorJobs[forwardId] = serviceScope.launch {
-            while (isActive) {
-                delay(intervalMillis)
-                if (!manager.verifyConnected()) {
-                    tunnelManagers.remove(forwardId)?.disconnect()
-                    monitorJobs.remove(forwardId)
-                    updateStatus(
-                        ForwardStatus(
-                            forwardId = forwardId,
-                            state = TunnelConnectionState.ERROR,
-                            phase = TunnelPhase.ERROR,
-                            message = getString(R.string.status_connection_lost),
-                        )
-                    )
-                    stopIfIdle()
-                    break
-                }
-            }
-        }
+    private fun saveDesiredForwardIds() {
+        TunnelPreferences(applicationContext).saveDesiredForwardIds(desiredForwardIds)
     }
+
+    private fun Throwable.isPermanent(): Boolean {
+        if (this is PermanentTunnelException) return true
+        return TunnelRetryPolicy.isPermanentSshFailure(message.orEmpty())
+    }
+
+    private class PermanentTunnelException(message: String) : Exception(message)
 
     private fun stopIfIdle() {
-        if (tunnelManagers.isEmpty() && connectJobs.values.none { it.isActive }) {
+        if (connectJobs.values.none { it.isActive } && cleanupJobs.values.none { it.isActive } && tunnelManagers.isEmpty()) {
             if (activeAdbForwardIds.isEmpty()) adbDiscovery.stop()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
-        } else {
-            refreshNotification()
-        }
+        } else refreshNotification()
     }
 
     private fun startAdbWatcher(
@@ -316,8 +303,9 @@ class TunnelForegroundService : Service() {
             adbDiscovery.snapshot.collect { snapshot ->
                 val endpoint = AdbEndpointSelector.select(snapshot.endpoints, kind)
                 if (endpoint == null) {
-                    manager.removeReverseForward()
+                    withContext(Dispatchers.IO) { manager.removeReverseForward() }
                     endpointWasMissing = true
+                    endpointKey = ""
                     updateStatus(
                         ForwardStatus(
                             forwardId = forwardId,
@@ -329,25 +317,21 @@ class TunnelForegroundService : Service() {
                     return@collect
                 }
                 val nextKey = endpointKey(endpoint)
-                if (nextKey != endpointKey) {
+                var targetReady = nextKey == endpointKey
+                if (!targetReady) {
                     endpoint.primaryAddress?.hostAddress?.let { address ->
-                        runCatching {
-                            manager.replaceReverseTarget(address, endpoint.port)
-                        }.onSuccess {
+                        try {
+                            withContext(Dispatchers.IO) { manager.replaceReverseTarget(address, endpoint.port) }
                             endpointKey = nextKey
-                        }.onFailure {
-                            updateStatus(
-                                ForwardStatus(
-                                    forwardId = forwardId,
-                                    state = TunnelConnectionState.ERROR,
-                                    phase = TunnelPhase.ERROR,
-                                    message = it.userFacingMessage(),
-                                )
-                            )
+                            targetReady = true
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            withContext(Dispatchers.IO) { manager.disconnect() }
                         }
                     }
                 }
-                if (endpointWasMissing) {
+                if (endpointWasMissing && targetReady) {
                     endpointWasMissing = false
                     updateStatus(
                         ForwardStatus(
@@ -374,6 +358,8 @@ class TunnelForegroundService : Service() {
     private fun Throwable.userFacingMessage(): String {
         val detail = message.orEmpty()
         return when {
+            this is PermanentTunnelException -> detail
+            detail == getString(R.string.status_connection_lost) -> detail
             detail.contains("HostKey has been changed", ignoreCase = true) ||
                 detail.contains("reject HostKey", ignoreCase = true) -> getString(R.string.status_host_key_changed)
             detail.contains("Auth fail", ignoreCase = true) -> getString(R.string.status_auth_failed)

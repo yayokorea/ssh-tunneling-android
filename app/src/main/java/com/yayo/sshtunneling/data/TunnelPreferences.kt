@@ -157,6 +157,13 @@ class TunnelPreferences(context: Context) {
         }
     }
 
+    fun loadDesiredForwardIds(): Set<String> =
+        statusPrefs.getStringSet(KEY_DESIRED_FORWARDS, emptySet())?.toSet().orEmpty()
+
+    fun saveDesiredForwardIds(forwardIds: Set<String>) {
+        statusPrefs.edit { putStringSet(KEY_DESIRED_FORWARDS, forwardIds.toSet()) }
+    }
+
     private fun JSONArray.toHostProfiles(): List<HostProfile> {
         return buildList {
             for (index in 0 until length()) {
@@ -216,6 +223,7 @@ class TunnelPreferences(context: Context) {
         private const val KEY_HOSTS = "hosts"
         private const val KEY_FORWARDS = "forwards"
         private const val KEY_STATUSES = "statuses"
+        private const val KEY_DESIRED_FORWARDS = "desired_forwards"
 
         private const val KEY_ID = "id"
         private const val KEY_HOST_ID = "host_id"
