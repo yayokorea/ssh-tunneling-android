@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/yayokorea/ssh-tunneling-android/compare/v1.1.0...v1.1.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* stabilize widget tunnel controls and reconnect sessions ([7d0827a](https://github.com/yayokorea/ssh-tunneling-android/commit/7d0827a0db4faa25481e58cb89e5a87529cb75d1))
+
 ## [1.1.0](https://github.com/yayokorea/ssh-tunneling-android/compare/v1.0.6...v1.1.0) (2026-09-16)
 
 
